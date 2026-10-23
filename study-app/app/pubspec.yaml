@@ -1,0 +1,39 @@
+name: study_app
+description: 学习资料平台 Flutter 客户端（复用错题本工程框架：Riverpod + Dio + go_router）
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # 状态管理
+  flutter_riverpod: ^2.4.0
+  # 网络（会话用 Cookie）
+  dio: ^5.4.0
+  cookie_jar: ^4.0.8
+  dio_cookie_manager: ^3.1.1
+  # 路由
+  go_router: ^12.1.0
+  # 本地持久化（服务器地址）
+  shared_preferences: ^2.2.2
+  # Markdown 预览
+  flutter_markdown: ^0.6.18
+  # 文件选择与分享/下载
+  file_picker: ^8.0.0
+  share_plus: ^7.2.1
+  path_provider: ^2.1.1
+  # 图片查看
+  photo_view: ^0.15.0
+  # Material You
+  dynamic_color: ^1.7.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true

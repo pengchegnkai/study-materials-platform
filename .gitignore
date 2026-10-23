@@ -6,3 +6,7 @@ data/
 .env.*
 .DS_Store
 .wrangler/
+study-app/build_tmp/
+study-app/build/
+study-app/analyze.log
+study-app/build.log

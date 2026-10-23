@@ -1,0 +1,178 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'study-app/**'
+      - '.github/workflows/build-apk.yml'
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: study-app
+    permissions:
+      contents: write   # 允许 GITHUB_TOKEN 创建 latest 标签与 Release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter (stable)
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Generate platform project & merge app source
+        run: |
+          flutter --version
+          flutter config --no-analytics
+          # 1) 生成完整 Android 工程（包名 com.study.study_app）
+          flutter create --org com.study --project-name study_app build_tmp
+          # 2) 合入 Dart 源码与依赖清单
+          rm -rf build_tmp/lib
+          rm -rf build_tmp/test
+          cp -r app/lib build_tmp/lib
+          cp app/pubspec.yaml build_tmp/pubspec.yaml
+          # 3) 覆盖 AndroidManifest（权限 + 网络安全策略 + 中文应用名）
+          cp android/app/src/main/AndroidManifest.xml \
+             build_tmp/android/app/src/main/AndroidManifest.xml
+          mkdir -p build_tmp/android/app/src/main/res/xml
+          cp android/app/src/main/res/xml/network_security_config.xml \
+             build_tmp/android/app/src/main/res/xml/network_security_config.xml
+          # 4) minSdk 24 / compileSdk 36 / targetSdk 36（file_picker 8.x 要求 compileSdk>=36）
+          python3 ci/patch_sdk_versions.py build_tmp/android/app
+          # 5) 关闭 R8 混淆（个人应用换取构建稳定）
+          python3 ci/disable_minify.py build_tmp/android/app
+          # 6) 子模块 compileSdk 统一提升到 36
+          if [ -f build_tmp/android/build.gradle.kts ]; then
+            printf '%s\n' \
+              '' \
+              '// CI: 子模块 compileSdk 统一提升到 36（flutter_plugin_android_lifecycle AAR metadata 要求）' \
+              'gradle.projectsEvaluated {' \
+              '    allprojects {' \
+              '        val androidExt = extensions.findByName("android") ?: return@allprojects' \
+              '        val setter = androidExt.javaClass.methods.firstOrNull { it.name == "setCompileSdk" }' \
+              '        if (setter != null) {' \
+              '            try { setter.invoke(androidExt, 36) } catch (e: Exception) { println("compileSdk bump failed: $e") }' \
+              '        }' \
+              '    }' \
+              '}' \
+              >> build_tmp/android/build.gradle.kts
+          elif [ -f build_tmp/android/build.gradle ]; then
+            printf '%s\n' \
+              '' \
+              '// CI: 子模块 compileSdk 统一提升到 36' \
+              'gradle.projectsEvaluated {' \
+              '    allprojects { project ->' \
+              '        if (project.extensions.findByName("android") != null) {' \
+              '            def androidExt = project.extensions.getByName("android")' \
+              '            project.extensions.getByName("android")' \
+              '        }' \
+              '    }' \
+              '}' \
+              >> build_tmp/android/build.gradle
+          fi
+
+      - name: flutter pub get
+        working-directory: study-app/build_tmp
+        run: flutter pub get
+
+      - name: 插件子项目 compileSdk 统一 36（lifecycle AAR metadata 要求）
+        working-directory: .
+        run: |
+          PUB_CACHE_DIR="${PUB_CACHE:-$HOME/.pub-cache}"
+          grep -rl 'compileSdk' "$PUB_CACHE_DIR/hosted/pub.dev"/*/android/build.gradle* 2>/dev/null | while IFS= read -r f; do
+            sed -i \
+              -e 's/compileSdkVersion [0-9][0-9]\+/compileSdkVersion 36/' \
+              -e 's/compileSdkVersion = [0-9][0-9]\+/compileSdkVersion = 36/' \
+              -e 's/compileSdk [0-9][0-9]\+/compileSdk 36/' \
+              -e 's/compileSdk = [0-9][0-9]\+/compileSdk = 36/' \
+              -e 's/compileSdkVersion flutter\.compileSdkVersion/compileSdkVersion 36/' \
+              -e 's/compileSdk flutter\.compileSdkVersion/compileSdk 36/' \
+              -e 's/compileSdk = flutter\.compileSdkVersion/compileSdk = 36/' \
+              -e 's/targetSdkVersion [0-9][0-9]\+/targetSdkVersion 36/' \
+              -e 's/targetSdk = [0-9][0-9]\+/targetSdk 36/' \
+              -e 's/minSdkVersion 2[0-9]/minSdkVersion 24/' \
+              -e 's/minSdk = 2[0-9]\b/minSdk = 24/' \
+              "$f" || true
+          done
+          echo done
+
+      - name: flutter analyze（输出存档，不阻塞）
+        working-directory: study-app/build_tmp
+        run: flutter analyze > ../analyze.log 2>&1 || true
+
+      - name: Build release APK
+        working-directory: study-app/build_tmp
+        run: |
+          set -o pipefail
+          flutter build apk --release 2>&1 | tee ../build.log
+
+      - name: Upload build logs（无论成败）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            study-app/analyze.log
+            study-app/build.log
+          if-no-files-found: ignore
+
+      - name: 失败时输出关键错误到 Step Summary 与 Annotations
+        if: failure()
+        run: |
+          {
+            echo "## Build 失败摘要（build.log 末尾 80 行）"
+            echo '```'
+            tail -n 80 study-app/build.log 2>/dev/null || echo '（build.log 不存在）'
+            echo '```'
+            echo "## analyze.log error 行（前 40 条）"
+            echo '```'
+            grep -E '^\s*error' study-app/analyze.log 2>/dev/null | head -40 || echo '（无 error 行或 analyze.log 不存在）'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          grep -m 15 -E '^\s*error' study-app/analyze.log 2>/dev/null | while IFS= read -r line; do
+            echo "::error::A ${line:0:200}"
+          done
+          grep -im 12 -E 'error|exception|failed|cannot|unable|missing|undefined' study-app/build.log 2>/dev/null | while IFS= read -r line; do
+            echo "::error::D ${line:0:200}"
+          done
+          echo "done"
+
+      - name: Rename APK with short commit
+        run: |
+          cp build_tmp/build/app/outputs/flutter-apk/app-release.apk \
+             study-app-${GITHUB_SHA::7}.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: study-app-release-apk
+          path: study-app-*.apk
+          if-no-files-found: error
+
+      # 固定下载 URL（免登录）：
+      # https://github.com/pengchegnkai/desktop-tutorial/releases/latest/download/study-app-latest.apk
+      - name: Publish to GitHub Release (latest)
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          trap 'echo "::error::REL $(tail -n 8 /tmp/rel.log 2>/dev/null | tr "\n" " ")"' ERR
+          set -o pipefail
+          cp study-app-${GITHUB_SHA::7}.apk study-app-latest.apk
+          printf 'commit %s · built %s\n' "${GITHUB_SHA::7}" "${GITHUB_RUN_ID}" > /tmp/notes.txt
+          gh release delete latest --yes 2>/dev/null || true
+          gh release create latest study-app-latest.apk \
+            --title "学习资料 APK（自动构建）" \
+            --notes-file /tmp/notes.txt 2>&1 | tee /tmp/rel.log
+          echo "::notice::REL https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/study-app-latest.apk"
