@@ -1,0 +1,12 @@
+name = "study-materials"
+pages_build_output_dir = "dist"
+compatibility_date = "2026-10-01"
+
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "study-materials-files"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "study-materials-db"
+database_id = "38e46093-742e-45b4-8670-b6a875a18306"
