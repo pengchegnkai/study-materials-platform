@@ -15,7 +15,7 @@ class AppTheme {
         surface: bgLight,
       ),
       scaffoldBackgroundColor: bgLight,
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         elevation: 0,
         color: cardLight,
         shape: RoundedRectangleBorder(
