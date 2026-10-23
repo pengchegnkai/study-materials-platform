@@ -169,7 +169,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: study-app-release-apk
-          path: study-app-*.apk
+          path: study-app/study-app-*.apk
           if-no-files-found: error
 
       # 固定下载 URL（免登录）：
