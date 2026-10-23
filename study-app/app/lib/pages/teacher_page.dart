@@ -82,7 +82,7 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
       final r = await _svc.upload(
         file: File(path),
         filename: pf.name,
-        subjectId: subjectId,
+        subjectId: subjectId!,
         visibility: _visibility,
       );
       if (r.ok) ok++; else { fail++; firstError ??= r.error; }

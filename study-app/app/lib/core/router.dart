@@ -20,7 +20,6 @@ final router = GoRouter(
     GoRoute(
       path: '/preview',
       builder: (_, s) => PreviewPage(
-        key: s.queryParameters.containsKey('k') ? const ValueKey('') : null,
         fileKey: s.uri.queryParameters['key'] ?? '',
         title: s.uri.queryParameters['title'] ?? '预览',
         type: s.uri.queryParameters['type'] ?? 'other',

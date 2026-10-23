@@ -77,7 +77,7 @@ class _TypeIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const (IconData, Color, Color) data = switch (type) {
+    final (IconData, Color, Color) data = switch (type) {
       'markdown' => (Icons.description_outlined, Color(0xFFEEF2FF), Color(0xFF4F46E5)),
       'pptx' => (Icons.slideshow_outlined, Color(0xFFFFF7ED), Color(0xFFC2410C)),
       'docx' => (Icons.article_outlined, Color(0xFFEFF6FF), Color(0xFF1D4ED8)),

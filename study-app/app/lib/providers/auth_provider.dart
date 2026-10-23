@@ -9,6 +9,8 @@ class AuthState {
   final SessionUser? user;
   final bool loading;
   final bool configured;
+  bool get isAdmin => user?.isAdmin == true;
+  bool get isTeacher => user?.isTeacher == true;
   const AuthState({this.user, this.loading = false, this.configured = false});
 
   AuthState copyWith({SessionUser? user, bool? loading, bool? configured}) =>
