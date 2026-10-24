@@ -109,7 +109,7 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
       await _svc.updateFile(key: f.key, visibility: next);
       _loadFiles();
     } catch (e) {
-      _toast('操作失败：$e'.replaceFirst('Exception: '));
+      _toast('操作失败：$e'.replaceFirst('Exception: ', ''));
     }
   }
 
@@ -118,7 +118,7 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
       await _svc.updateFile(key: f.key, title: newTitle);
       _loadFiles();
     } catch (e) {
-      _toast('保存失败：$e'.replaceFirst('Exception: '));
+      _toast('保存失败：$e'.replaceFirst('Exception: ', ''));
     }
   }
 
@@ -127,7 +127,7 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
       await _svc.deleteFile(f.key);
       _loadFiles();
     } catch (e) {
-      _toast('删除失败：$e'.replaceFirst('Exception: '));
+      _toast('删除失败：$e'.replaceFirst('Exception: ', ''));
     }
   }
 

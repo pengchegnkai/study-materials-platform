@@ -24,7 +24,7 @@ class _AdminPageState extends ConsumerState<AdminPage> with SingleTickerProvider
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('管理后台'),
@@ -67,7 +67,7 @@ class _DashboardTab extends ConsumerWidget {
   const _DashboardTab();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final dashboard = ref.watch(adminDashboardProvider);
     final theme = Theme.of(context);
 
@@ -244,7 +244,7 @@ class _FilesTab extends ConsumerWidget {
   const _FilesTab();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final adminFiles = ref.watch(adminFilesProvider);
 
     return adminFiles.when(
@@ -266,7 +266,7 @@ class _UsersTab extends ConsumerWidget {
   const _UsersTab();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final users = ref.watch(adminUsersProvider);
 
     return users.when(
@@ -288,7 +288,7 @@ class _UserTile extends ConsumerWidget {
   const _UserTile(this.user);
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
@@ -408,7 +408,7 @@ class _SubjectsTab extends ConsumerWidget {
   const _SubjectsTab();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final subjects = ref.watch(adminSubjectsProvider);
 
     return subjects.when(
@@ -475,7 +475,7 @@ class _SubjectTile extends ConsumerWidget {
   const _SubjectTile(this.subject);
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(

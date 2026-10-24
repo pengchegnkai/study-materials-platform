@@ -29,7 +29,7 @@ class SubjectPage extends ConsumerWidget {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Text('$e'.replaceFirst('Exception: '),
+            Text('$e'.replaceFirst('Exception: ', ''),
                 style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
             const SizedBox(height: 12),
             OutlinedButton(
