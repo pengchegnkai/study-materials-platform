@@ -41,9 +41,10 @@ class AppConfig {
     await prefs.setString(_key, u);
   }
 
-  /// 预设地址：局域网直连与公网域名，供配置页快速选择
+  /// 预设地址：局域网直连、公网 API 域名（HTTP 明文端口 8080）、主站公网域名
   static const suggestions = [
     'http://192.168.3.228:8787',
+    'http://api.pck-server.ccwu.cc:8080',
     'https://study.pck-server.ccwu.cc',
   ];
 }
