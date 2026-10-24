@@ -1,4 +1,5 @@
 /// core/api_client.dart —— Dio 封装：baseUrl 动态、会话 Cookie 自动携带与持久化
+import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
 import 'package:cookie_jar/cookie_jar.dart';
