@@ -52,7 +52,17 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
 
   Future<void> reload() async {
     state = const AsyncData(AuthState(loading: true));
-    await build();
+    try {
+      final next = await build();
+      state = AsyncData(next);
+    } catch (e) {
+      // 刷新失败（地址不可达/超时）不能把整个页面卡死，降级为未登录状态
+      state = AsyncData(AuthState(
+        user: null,
+        configured: AppConfig.isConfigured,
+        loading: false,
+      ));
+    }
   }
 }
 

@@ -36,20 +36,42 @@ class _ServerConfigPageState extends ConsumerState<ServerConfigPage> {
       _testing = true;
       _error = null;
     });
-    await AppConfig.setBaseUrl(url);
-    await AppConfig.setProxy(_proxyCtrl.text);
-    ApiClient().applyProxy(_proxyCtrl.text);
-    final auth = ref.read(authProvider.notifier);
-    await auth.reload();
-    final s = ref.read(authProvider).value;
-    final ok = s != null && s.user != null;
-    if (!mounted) return;
-    setState(() => _testing = false);
-    if (ok) {
-      context.go('/');
-    } else {
-      // 地址可用性以登录页为准；直接进入登录页
-      context.go('/login');
+    try {
+      await AppConfig.setBaseUrl(url);
+      await AppConfig.setProxy(_proxyCtrl.text);
+      ApiClient().applyProxy(_proxyCtrl.text);
+
+      // 直接探测服务器连通性（带超时），不依赖 auth 状态是否刷新成功
+      final reachable = await _probe();
+      if (!mounted) return;
+      setState(() => _testing = false);
+      if (!reachable) {
+        setState(() => _error = '无法连接该地址，请检查网络或地址是否正确');
+        return;
+      }
+      await ref.read(authProvider.notifier).reload();
+      if (!mounted) return;
+      final s = ref.read(authProvider).value;
+      context.go(s?.user != null ? '/' : '/login');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _testing = false;
+        _error = '连接失败：${e.toString().replaceFirst('Exception: ', '')}';
+      });
+    }
+  }
+
+  /// 探测服务器是否可用：任何 HTTP 响应（含 401）都视为可达
+  Future<bool> _probe() async {
+    try {
+      final resp = await ApiClient()
+          .dio
+          .get('/session')
+          .timeout(const Duration(seconds: 8));
+      return resp.statusCode != null && resp.statusCode! < 500;
+    } catch (_) {
+      return false;
     }
   }
 
