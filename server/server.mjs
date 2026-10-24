@@ -9,7 +9,7 @@ import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { DatabaseSync } from 'node:sqlite';
-import { webcrypto as crypto } from 'node:crypto';
+import { webcrypto as crypto, createHmac, createHash, randomBytes } from 'node:crypto';
 import { readFileSync, existsSync, mkdirSync, createWriteStream, unlinkSync, statSync } from 'node:fs';
 import { createReadStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
@@ -38,6 +38,16 @@ const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND
 if (!tables) {
   db.exec(readFileSync(path.join(ROOT, '..', 'schema.sql'), 'utf8'));
 }
+// refresh_tokens（错题本同款设计：只存 SHA-256 哈希，轮换 + 盗用检测）
+db.exec(`CREATE TABLE IF NOT EXISTS refresh_tokens (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  token_hash TEXT UNIQUE NOT NULL,
+  device_info TEXT,
+  revoked INTEGER NOT NULL DEFAULT 0,
+  expires_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+)`);
 
 // ---------- 环境变量管理员落库 ----------
 // files.uploader_id 外键指向 users(id)；env 管理员（env-admin）必须存在于 users 表，
@@ -139,6 +149,72 @@ function clearCookie() {
   return `${COOKIE_NAME}=; HttpOnly; Path=/; Max-Age=0; SameSite=Strict`;
 }
 
+// ---------- Token 认证（错题本同款设计：JWT access + 轮换 refresh） ----------
+const ACCESS_TTL = 30 * 60; // 30 分钟
+const REFRESH_TTL = 30 * 24 * 60 * 60; // 30 天
+
+const b64url = (buf) => Buffer.from(buf).toString('base64url');
+const unb64url = (s) => Buffer.from(s, 'base64url');
+
+function signJWT(payload) {
+  const header = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+  const body = b64url(JSON.stringify(payload));
+  const sig = createHmac('sha256', SESSION_SECRET).update(`${header}.${body}`).digest('base64url');
+  return `${header}.${body}.${sig}`;
+}
+
+function verifyJWT(token) {
+  try {
+    const [header, body, sig] = token.split('.');
+    if (!header || !body || !sig) return null;
+    const expect = createHmac('sha256', SESSION_SECRET).update(`${header}.${body}`).digest('base64url');
+    if (!constantTimeEqual(sig, expect)) return null;
+    const payload = JSON.parse(unb64url(body).toString());
+    if (typeof payload.exp !== 'number' || payload.exp < Math.floor(Date.now() / 1000)) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+const sha256hex = (s) => createHash('sha256').update(s).digest('hex');
+
+function issueRefresh(userId, deviceInfo) {
+  const raw = randomBytes(48).toString('hex');
+  const expires = Date.now() + REFRESH_TTL * 1000;
+  db.prepare('INSERT INTO refresh_tokens (id, user_id, token_hash, device_info, revoked, expires_at, created_at) VALUES (?, ?, ?, ?, 0, ?, ?)')
+    .run(crypto.randomUUID(), userId, sha256hex(raw), deviceInfo || '', expires, Date.now());
+  return raw;
+}
+
+/// 校验并轮换 refresh token：原子吊销旧 token；已吊销 token 复用视为盗用 → 级联吊销全部
+function rotateRefresh(refreshToken, username) {
+  if (!refreshToken) return null;
+  const r = db.prepare(
+    'UPDATE refresh_tokens SET revoked = 1 WHERE token_hash = ? AND revoked = 0 AND expires_at > ? RETURNING id, user_id'
+  ).get(sha256hex(refreshToken), Date.now());
+  if (!r) {
+    const probe = db.prepare('SELECT user_id, revoked, expires_at FROM refresh_tokens WHERE token_hash = ?')
+      .get(sha256hex(refreshToken));
+    if (probe && probe.revoked === 1 && probe.expires_at > Date.now()) {
+      console.warn(`[token] 已吊销 refresh token 被重用，级联吊销 user=${probe.user_id} 全部 token`);
+      db.prepare('UPDATE refresh_tokens SET revoked = 1 WHERE user_id = ?').run(probe.user_id);
+    }
+    return null;
+  }
+  const u = db.prepare('SELECT id, username, status FROM users WHERE id = ?').get(r.user_id);
+  if (!u || u.status !== 'active') return null;
+  const roles = db.prepare('SELECT r.name FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = ?')
+    .all(r.user_id).map((x) => x.name);
+  return {
+    sub: u.id,
+    username: u.username,
+    roles,
+    accessToken: signJWT({ sub: u.id, username: u.username, roles, exp: Math.floor(Date.now() / 1000) + ACCESS_TTL }),
+    refreshToken: issueRefresh(u.id, username),
+  };
+}
+
 // ---------- 实时在线统计（滑动窗口：5 分钟内有活动的会话视为在线） ----------
 const ONLINE_WINDOW_MS = 5 * 60 * 1000;
 const onlineMap = new Map(); // sessionId -> lastSeenTs
@@ -159,12 +235,22 @@ function countOnline() {
 const app = new Hono();
 
 app.use('/api/*', async (c, next) => {
-  const token = parseCookies(c.req.header('Cookie') || '')[COOKIE_NAME];
-  c.set('user', token ? await verifySessionToken(token) : null);
-  touchOnline(c.get('user'));
+  // 错题本同款：优先 Bearer access token，回退 Cookie 会话
+  const authz = c.req.header('Authorization') || '';
+  let user = null;
+  if (authz.startsWith('Bearer ')) {
+    user = verifyJWT(authz.slice(7));
+  }
+  if (!user) {
+    const token = parseCookies(c.req.header('Cookie') || '')[COOKIE_NAME];
+    user = token ? await verifySessionToken(token) : null;
+  }
+  c.set('user', user);
+  touchOnline(user);
   await next();
-  // 登录诊断日志（临时）：记录全部 API 请求的 Cookie 与响应码
-  console.log(`[diag] ${c.req.method} ${c.req.path} cookie=${token ? '有' : '无'} -> ${c.res.status} (proto=${c.req.header('x-forwarded-proto') || 'local'})`);
+  // 登录诊断日志（临时）：记录全部 API 请求的认证方式与响应码
+  const authKind = authz.startsWith('Bearer ') ? 'bearer' : (parseCookies(c.req.header('Cookie') || '')[COOKIE_NAME] ? 'cookie' : '无');
+  console.log(`[diag] ${c.req.method} ${c.req.path} auth=${authKind} -> ${c.res.status} (proto=${c.req.header('x-forwarded-proto') || 'local'})`);
 });
 
 function getUser(c) {
@@ -294,7 +380,9 @@ app.post('/api/login', async (c) => {
     if (await verifyPassword(password, ADMIN_PASSWORD_HASH)) {
       const token = await createSessionToken('env-admin', username, ['admin']);
       c.header('Set-Cookie', sessionCookie(token));
-      return c.json({ ok: true, roles: ['admin'] });
+      const accessToken = signJWT({ sub: 'env-admin', username, roles: ['admin'], exp: Math.floor(Date.now() / 1000) + ACCESS_TTL });
+      const refreshToken = issueRefresh('env-admin', c.req.header('user-agent'));
+      return c.json({ ok: true, roles: ['admin'], accessToken, refreshToken });
     }
     await new Promise((r) => setTimeout(r, 500));
     return c.json({ error: '用户名或密码错误' }, 401);
@@ -313,10 +401,29 @@ app.post('/api/login', async (c) => {
   const roles = row.roles ? row.roles.split(',') : [];
   const token = await createSessionToken(row.id, row.username, roles);
   c.header('Set-Cookie', sessionCookie(token));
-  return c.json({ ok: true, roles });
+  const accessToken = signJWT({ sub: row.id, username: row.username, roles, exp: Math.floor(Date.now() / 1000) + ACCESS_TTL });
+  const refreshToken = issueRefresh(row.id, c.req.header('user-agent'));
+  return c.json({ ok: true, roles, accessToken, refreshToken });
 });
 
-app.post('/api/logout', (c) => {
+// POST /api/refresh：轮换 refresh token（错题本同款：原子吊销 + 盗用检测）
+app.post('/api/refresh', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const result = rotateRefresh(body.refreshToken, body.username);
+  if (!result) return c.json({ error: 'refresh token 无效' }, 401);
+  return c.json({
+    ok: true,
+    accessToken: result.accessToken,
+    refreshToken: result.refreshToken,
+    roles: result.roles,
+  });
+});
+
+app.post('/api/logout', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  if (body.refreshToken) {
+    db.prepare('UPDATE refresh_tokens SET revoked = 1 WHERE token_hash = ?').run(sha256hex(body.refreshToken));
+  }
   c.header('Set-Cookie', clearCookie());
   return c.json({ ok: true });
 });

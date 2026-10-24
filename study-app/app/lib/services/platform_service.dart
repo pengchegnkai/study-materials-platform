@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import '../core/api_client.dart';
 import '../core/config.dart';
 import '../models/models.dart';
+import 'token_storage.dart';
 
 class PlatformService {
   final Dio _dio = ApiClient().dio;
@@ -33,8 +34,14 @@ class PlatformService {
       throw Exception((resp.data is Map ? resp.data['error'] : null) ?? '登录失败');
     }
     final roles = (resp.data['roles'] as List).cast<String>();
+    // 错题本同款：保存 access/refresh token（后续请求走 Bearer 头）
+    final access = resp.data['accessToken'];
+    final refresh = resp.data['refreshToken'];
+    if (access is String && access.isNotEmpty && refresh is String && refresh.isNotEmpty) {
+      await TokenStorage.save(access: access, refresh: refresh);
+    }
     await ApiClient().saveSession(username: username, roles: roles);
-    // 用 cookie 会话换取完整用户信息
+    // 用会话换取完整用户信息
     final me = await _dio.get('/session');
     final user = SessionUser.fromJson((me.data['user'] as Map).cast<String, dynamic>());
     return user;
@@ -43,8 +50,9 @@ class PlatformService {
   Future<void> logout() async {
     _ensure();
     try {
-      await _dio.post('/logout');
+      await _dio.post('/logout', data: {'refreshToken': TokenStorage.refreshTokenSync});
     } catch (_) {}
+    await TokenStorage.clear();
     await ApiClient().clearSession();
   }
 
