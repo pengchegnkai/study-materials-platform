@@ -41,9 +41,8 @@ class AppConfig {
     await prefs.setString(_key, u);
   }
 
-  /// 预设地址：本机回环（服务器与 App 同机时最优）→ 局域网 → 公网
+  /// 预设地址：局域网直连与公网域名，供配置页快速选择
   static const suggestions = [
-    'http://127.0.0.1:8787',
     'http://192.168.3.228:8787',
     'https://study.pck-server.ccwu.cc',
   ];
