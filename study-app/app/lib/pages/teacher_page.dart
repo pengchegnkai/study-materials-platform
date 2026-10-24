@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../models/models.dart';
 import '../providers/auth_provider.dart';
 import '../services/platform_service.dart';
@@ -155,6 +156,11 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
       appBar: AppBar(
         title: const Text('老师工作台'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.home_outlined),
+            tooltip: '浏览资料',
+            onPressed: () => context.go('/'),
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: '刷新',

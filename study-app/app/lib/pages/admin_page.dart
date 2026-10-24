@@ -30,6 +30,11 @@ class _AdminPageState extends ConsumerState<AdminPage> with SingleTickerProvider
         title: const Text('管理后台'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.home_outlined),
+            tooltip: '浏览资料',
+            onPressed: () => context.go('/'),
+          ),
+          IconButton(
             icon: const Icon(Icons.logout_outlined),
             tooltip: '退出登录',
             onPressed: () async {

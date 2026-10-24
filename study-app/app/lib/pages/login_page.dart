@@ -47,8 +47,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       return;
     }
     final user = ref.read(authProvider).value?.user;
+    // 管理员主界面为后台看板；老师进工作台；学生进浏览页
+    // 三种角色都可从 AppBar 切换到浏览界面（首页）
     if (user?.isAdmin == true) {
-      context.go('/teacher');
+      context.go('/admin');
     } else if (user?.isTeacher == true) {
       context.go('/teacher');
     } else {
