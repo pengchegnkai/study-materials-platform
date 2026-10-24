@@ -1,4 +1,4 @@
-/// core/router.dart —— go_router 路由：splash/login/home/subject/preview/teacher
+/// core/router.dart —— go_router 路由：splash/login/home/subject/preview/teacher/admin
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../pages/splash_page.dart';
@@ -8,6 +8,7 @@ import '../pages/subject_page.dart';
 import '../pages/preview_page.dart';
 import '../pages/teacher_page.dart';
 import '../pages/server_config_page.dart';
+import '../pages/admin_page.dart';
 
 final router = GoRouter(
   initialLocation: '/splash',
@@ -26,5 +27,6 @@ final router = GoRouter(
       ),
     ),
     GoRoute(path: '/teacher', builder: (_, __) => const TeacherPage()),
+    GoRoute(path: '/admin', builder: (_, __) => const AdminPage()),
   ],
 );

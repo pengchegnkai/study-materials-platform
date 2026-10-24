@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../models/models.dart';
 import '../providers/auth_provider.dart';
 import '../providers/files_provider.dart';
+import '../components/file_manager.dart';
 
 class HomePage extends ConsumerWidget {
   const HomePage({super.key});
@@ -23,6 +24,12 @@ class HomePage extends ConsumerWidget {
               icon: const Icon(Icons.upload_file_outlined),
               tooltip: '老师工作台',
               onPressed: () => context.push('/teacher'),
+            ),
+          if (auth?.isAdmin == true)
+            IconButton(
+              icon: const Icon(Icons.admin_panel_settings_outlined),
+              tooltip: '管理后台',
+              onPressed: () => context.push('/admin'),
             ),
           IconButton(
             icon: const Icon(Icons.logout_outlined),

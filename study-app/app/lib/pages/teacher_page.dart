@@ -1,13 +1,12 @@
-/// pages/teacher_page.dart —— 老师工作台：科目选择 + 拖选文件上传 + 我的文件管理
+/// pages/teacher_page.dart —— 老师工作台：上传 + 资源管理器风格的文件管理
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/models.dart';
 import '../providers/auth_provider.dart';
-import '../providers/files_provider.dart';
 import '../services/platform_service.dart';
-import '../utils/format.dart';
+import '../components/file_manager.dart';
 
 class TeacherPage extends ConsumerStatefulWidget {
   const TeacherPage({super.key});
@@ -21,7 +20,6 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
   final _titleCtrl = TextEditingController();
 
   String _visibility = 'private';
-  String _title = '';
   bool _uploading = false;
   bool _loadingFiles = true;
   List<FileItem> _myFiles = [];
@@ -30,6 +28,12 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
   void initState() {
     super.initState();
     _loadFiles();
+  }
+
+  @override
+  void dispose() {
+    _titleCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _loadFiles() async {
@@ -50,7 +54,6 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
     final subjects = await _svc.subjects();
     if (!mounted) return;
 
-    // 选科目
     String? subjectId;
     await showDialog(
       context: context,
@@ -69,7 +72,6 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
     );
     if (subjectId == null || !mounted) return;
 
-    // 选文件
     final result = await FilePicker.platform.pickFiles(allowMultiple: true);
     if (result == null || result.files.isEmpty || !mounted) return;
 
@@ -85,7 +87,12 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
         subjectId: subjectId!,
         visibility: _visibility,
       );
-      if (r.ok) ok++; else { fail++; firstError ??= r.error; }
+      if (r.ok) {
+        ok++;
+      } else {
+        fail++;
+        firstError ??= r.error;
+      }
     }
     if (!mounted) return;
     setState(() => _uploading = false);
@@ -96,183 +103,127 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
     _loadFiles();
   }
 
-  Future<void> _toggleVisibility(FileItem f) async {
-    final next = f.isPublished ? 'private' : 'published';
+  Future<void> _toggleVisibility(AdminFile f) async {
+    final next = f.visibility == 'published' ? 'private' : 'published';
     try {
       await _svc.updateFile(key: f.key, visibility: next);
       _loadFiles();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('操作失败：$e'.replaceFirst('Exception: ', '')), backgroundColor: Colors.red));
-      }
+      _toast('操作失败：$e'.replaceFirst('Exception: '));
     }
   }
 
-  Future<void> _editTitle(FileItem f) async {
-    _titleCtrl.text = f.title;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('编辑标题'),
-        content: TextField(controller: _titleCtrl, autofocus: true),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('保存')),
-        ],
-      ),
-    );
-    if (ok == true && mounted) {
-      try {
-        await _svc.updateFile(key: f.key, title: _titleCtrl.text.trim());
-        _loadFiles();
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('保存失败：$e'.replaceFirst('Exception: ', '')), backgroundColor: Colors.red));
-        }
-      }
+  Future<void> _rename(AdminFile f, String newTitle) async {
+    try {
+      await _svc.updateFile(key: f.key, title: newTitle);
+      _loadFiles();
+    } catch (e) {
+      _toast('保存失败：$e'.replaceFirst('Exception: '));
     }
   }
 
-  Future<void> _delete(FileItem f) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('删除文件'),
-        content: Text('确定删除「${f.title}」？此操作不可恢复。'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('删除'),
-          ),
-        ],
-      ),
-    );
-    if (ok == true && mounted) {
-      try {
-        await _svc.deleteFile(f.key);
-        _loadFiles();
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('删除失败：$e'.replaceFirst('Exception: ', '')), backgroundColor: Colors.red));
-        }
-      }
+  Future<void> _delete(AdminFile f) async {
+    try {
+      await _svc.deleteFile(f.key);
+      _loadFiles();
+    } catch (e) {
+      _toast('删除失败：$e'.replaceFirst('Exception: '));
     }
   }
+
+  void _toast(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
+  }
+
+  AdminFile _toAdminFile(FileItem f) => AdminFile(
+        key: f.key,
+        title: f.title,
+        size: f.size ?? 0,
+        visibility: f.visibility,
+        uploadedAt: f.uploadedAt,
+        uploaderUsername: f.uploader,
+        contentType: f.type,
+        subject: f.subject ?? '',
+        subjectSlug: f.subjectSlug ?? '',
+      );
 
   @override
   Widget build(BuildContext context) {
-    final user = ref.watch(authProvider).value?.user;
-
     return Scaffold(
-      appBar: AppBar(title: const Text('老师工作台')),
-      body: RefreshIndicator(
-        onRefresh: _loadFiles,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            // 上传设置卡片
-            Card(
+      appBar: AppBar(
+        title: const Text('老师工作台'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: '刷新',
+            onPressed: _loadFiles,
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          // 上传设置卡片
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Card(
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
                   children: [
-                    Row(
-                      children: [
-                        const Expanded(
-                          child: Text('上传设置', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-                        ),
-                        SegmentedButton<String>(
-                          segments: const [
-                            ButtonSegment(value: 'private', label: Text('不开放')),
-                            ButtonSegment(value: 'published', label: Text('开放')),
-                          ],
-                          selected: {_visibility},
-                          onSelectionChanged: (s) => setState(() => _visibility = s.first),
-                          style: const ButtonStyle(
-                            visualDensity: VisualDensity.compact,
-                            textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 12)),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _visibility == 'published' ? '上传后学生即可查看' : '上传后仅自己可见',
-                      style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
-                    ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: _uploading ? null : _pickAndUpload,
-                        icon: _uploading
-                            ? const SizedBox(
-                                width: 16, height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                            : const Icon(Icons.upload_file_outlined, size: 18),
-                        label: Text(_uploading ? '上传中…' : '选择文件上传'),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('上传设置', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                          SizedBox(height: 4),
+                          Text('上传后按可见性决定学生是否可查看',
+                              style: TextStyle(fontSize: 12, color: Color(0xFF9CA3AF))),
+                        ],
                       ),
+                    ),
+                    SegmentedButton<String>(
+                      segments: const [
+                        ButtonSegment(value: 'private', label: Text('不开放')),
+                        ButtonSegment(value: 'published', label: Text('开放')),
+                      ],
+                      selected: {_visibility},
+                      onSelectionChanged: (s) => setState(() => _visibility = s.first),
+                      style: const ButtonStyle(
+                        visualDensity: VisualDensity.compact,
+                        textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 12)),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    FilledButton.icon(
+                      onPressed: _uploading ? null : _pickAndUpload,
+                      icon: _uploading
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : const Icon(Icons.upload_file_outlined, size: 18),
+                      label: Text(_uploading ? '上传中…' : '上传'),
                     ),
                   ],
                 ),
               ),
             ),
-            const SizedBox(height: 16),
-            Text('我的文件 · ${_myFiles.length}',
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            if (_loadingFiles)
-              const Padding(
-                padding: EdgeInsets.all(32),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (_myFiles.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(32),
-                child: Center(child: Text('还没有文件', style: TextStyle(color: Color(0xFF6B7280)))),
-              )
-            else
-              ..._myFiles.map((f) => Card(
-                    child: ListTile(
-                      leading: Icon(
-                        f.isPublished ? Icons.visibility : Icons.visibility_off,
-                        color: f.isPublished ? const Color(0xFF059669) : const Color(0xFF9CA3AF),
-                      ),
-                      title: Text(f.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                      subtitle: Text(
-                        '${f.subject ?? '—'} · ${formatSize(f.size)} · ${f.isPublished ? "已开放" : "未开放"}',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                      trailing: PopupMenuButton<String>(
-                        onSelected: (v) {
-                          if (v == 'title') _editTitle(f);
-                          if (v == 'visibility') _toggleVisibility(f);
-                          if (v == 'delete') _delete(f);
-                        },
-                        itemBuilder: (_) => [
-                          const PopupMenuItem(value: 'title', child: Text('编辑标题')),
-                          PopupMenuItem(
-                              value: 'visibility',
-                              child: Text(f.isPublished ? '取消开放' : '对学生开放')),
-                          const PopupMenuItem(value: 'delete', child: Text('删除')),
-                        ],
-                      ),
-                    ),
-                  )),
-            if (user?.isAdmin == true)
-              Padding(
-                padding: const EdgeInsets.only(top: 16),
-                child: Text('提示：用户与科目管理请使用网页端后台',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
-              ),
-          ],
-        ),
+          ),
+          // 资源管理器风格的文件列表
+          Expanded(
+            child: _loadingFiles
+                ? const Center(child: CircularProgressIndicator())
+                : FileManager(
+                    files: _myFiles.map(_toAdminFile).toList(),
+                    onDelete: _delete,
+                    onToggleVisibility: _toggleVisibility,
+                    onRename: _rename,
+                    canManage: true,
+                  ),
+          ),
+        ],
       ),
     );
   }

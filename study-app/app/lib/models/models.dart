@@ -78,3 +78,137 @@ class UploadResult {
   final String? error;
   UploadResult({required this.ok, this.key, this.error});
 }
+
+/// 管理后台模型：仪表盘 / 文件 / 用户 / 科目（对齐 server.mjs 实际契约）
+class AdminDashboard {
+  final int onlineUsers;
+  final int totalUsers;
+  final int totalFiles;
+  final int totalSize;
+  final List<AdminFile> recentFiles;
+  final Map<String, int> byType; // 文件类型分布
+
+  AdminDashboard({
+    required this.onlineUsers,
+    required this.totalUsers,
+    required this.totalFiles,
+    required this.totalSize,
+    required this.recentFiles,
+    required this.byType,
+  });
+
+  factory AdminDashboard.fromJson(Map<String, dynamic> json) => AdminDashboard(
+        onlineUsers: json['online'] as int? ?? 0,
+        totalUsers: (json['users'] as Map?)?['total'] as int? ?? 0,
+        totalFiles: (json['files'] as Map?)?['total'] as int? ?? 0,
+        totalSize: (json['files'] as Map?)?['totalSize'] as int? ?? 0,
+        recentFiles: (json['recentFiles'] as List? ?? [])
+            .map((e) => AdminFile.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        byType: _byType(json['files'] as Map?),
+      );
+
+  static Map<String, int> _byType(Map? files) {
+    final list = (files?['byType'] as List? ?? []);
+    final out = <String, int>{};
+    for (final e in list) {
+      final m = e as Map<String, dynamic>;
+      out[m['type'] as String] = m['count'] as int;
+    }
+    return out;
+  }
+}
+
+class AdminFile {
+  final String key;
+  final String title;
+  final int size;
+  final String visibility;
+  final int uploadedAt;
+  final String uploaderUsername;
+  final String contentType;
+  final String subject;
+  final String subjectSlug;
+
+  AdminFile({
+    required this.key,
+    required this.title,
+    required this.size,
+    required this.visibility,
+    required this.uploadedAt,
+    required this.uploaderUsername,
+    required this.contentType,
+    required this.subject,
+    required this.subjectSlug,
+  });
+
+  factory AdminFile.fromJson(Map<String, dynamic> json) {
+    final key = json['key'] as String;
+    return AdminFile(
+      key: key,
+      title: json['title'] as String? ?? '',
+      size: json['size'] as int? ?? 0,
+      visibility: json['visibility'] as String? ?? 'private',
+      uploadedAt: json['uploadedAt'] as int? ?? 0,
+      uploaderUsername:
+          (json['uploaderUsername'] ?? json['uploader'] ?? '') as String,
+      contentType: json['contentType'] as String? ?? '',
+      subject: json['subject'] as String? ?? '',
+      subjectSlug: json['subjectSlug'] as String? ?? '',
+    );
+  }
+}
+
+class AdminUser {
+  final String id;
+  final String username;
+  final String status;
+  final List<String> roles;
+  final List<String> subjects; // 科目名列表
+  final int createdAt;
+
+  AdminUser({
+    required this.id,
+    required this.username,
+    required this.status,
+    required this.roles,
+    required this.subjects,
+    required this.createdAt,
+  });
+
+  int get subjectCount => subjects.length;
+
+  factory AdminUser.fromJson(Map<String, dynamic> json) => AdminUser(
+        id: json['id'] as String,
+        username: json['username'] as String,
+        status: json['status'] as String? ?? 'active',
+        roles: (json['roles'] as List? ?? []).map((e) => e as String).toList(),
+        subjects:
+            (json['subjects'] as List? ?? []).map((e) => e as String).toList(),
+        createdAt: json['createdAt'] as int? ?? 0,
+      );
+}
+
+class AdminSubject {
+  final String id;
+  final String name;
+  final String slug;
+  final int sortOrder;
+  final int fileCount;
+
+  AdminSubject({
+    required this.id,
+    required this.name,
+    required this.slug,
+    required this.sortOrder,
+    required this.fileCount,
+  });
+
+  factory AdminSubject.fromJson(Map<String, dynamic> json) => AdminSubject(
+        id: json['id'] as String,
+        name: json['name'] as String,
+        slug: json['slug'] as String,
+        sortOrder: json['sort_order'] as int? ?? 0,
+        fileCount: json['file_count'] as int? ?? 0,
+      );
+}
