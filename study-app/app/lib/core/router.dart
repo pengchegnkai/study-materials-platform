@@ -1,7 +1,6 @@
-/// core/router.dart —— go_router 路由：splash/login/home/subject/preview/teacher/admin
+/// core/router.dart —— go_router 路由：登录页为入口，服务器地址在登录页右上角设置
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import '../pages/splash_page.dart';
 import '../pages/login_page.dart';
 import '../pages/home_page.dart';
 import '../pages/subject_page.dart';
@@ -11,9 +10,8 @@ import '../pages/server_config_page.dart';
 import '../pages/admin_page.dart';
 
 final router = GoRouter(
-  initialLocation: '/splash',
+  initialLocation: '/login',
   routes: [
-    GoRoute(path: '/splash', builder: (_, __) => const SplashPage()),
     GoRoute(path: '/login', builder: (_, __) => const LoginPage()),
     GoRoute(path: '/server-config', builder: (_, __) => const ServerConfigPage()),
     GoRoute(path: '/', builder: (_, __) => const HomePage()),

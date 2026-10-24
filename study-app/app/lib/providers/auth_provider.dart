@@ -1,4 +1,5 @@
 /// providers/auth_provider.dart —— 会话状态（当前用户、登录/登出）
+/// 不做启动时的初始化检测：登录状态只由用户主动登录建立，避免启动即发网络请求。
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/api_client.dart';
 import '../core/config.dart';
@@ -20,16 +21,11 @@ class AuthState {
 class AuthNotifier extends AsyncNotifier<AuthState> {
   final _svc = PlatformService();
 
+  /// 启动时只读本地配置，不发起任何网络请求
   @override
   Future<AuthState> build() async {
     await AppConfig.load();
-    final cached = await ApiClient().cachedSession();
-    final user = await _svc.currentSession();
-    return AuthState(
-      user: user,
-      configured: AppConfig.isConfigured,
-      loading: false,
-    );
+    return AuthState(user: null, configured: AppConfig.isConfigured, loading: false);
   }
 
   Future<String?> login(String username, String password) async {
@@ -39,8 +35,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
       state = AsyncData(AuthState(user: user, configured: true));
       return null;
     } catch (e) {
-      final cached = await ApiClient().cachedSession();
-      state = AsyncData(AuthState(configured: AppConfig.isConfigured, loading: false, user: cached.username != null ? null : null));
+      state = AsyncData(AuthState(user: null, configured: AppConfig.isConfigured, loading: false));
       return e.toString().replaceFirst('Exception: ', '');
     }
   }
@@ -48,21 +43,6 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
   Future<void> logout() async {
     await _svc.logout();
     state = AsyncData(AuthState(user: null, configured: AppConfig.isConfigured));
-  }
-
-  Future<void> reload() async {
-    state = const AsyncData(AuthState(loading: true));
-    try {
-      final next = await build();
-      state = AsyncData(next);
-    } catch (e) {
-      // 刷新失败（地址不可达/超时）不能把整个页面卡死，降级为未登录状态
-      state = AsyncData(AuthState(
-        user: null,
-        configured: AppConfig.isConfigured,
-        loading: false,
-      ));
-    }
   }
 }
 

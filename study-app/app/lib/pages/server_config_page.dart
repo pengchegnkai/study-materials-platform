@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../core/api_client.dart';
 import '../core/config.dart';
-import '../providers/auth_provider.dart';
 
 class ServerConfigPage extends ConsumerStatefulWidget {
   const ServerConfigPage({super.key});
@@ -49,10 +48,8 @@ class _ServerConfigPageState extends ConsumerState<ServerConfigPage> {
         setState(() => _error = '无法连接该地址，请检查网络或地址是否正确');
         return;
       }
-      await ref.read(authProvider.notifier).reload();
-      if (!mounted) return;
-      final s = ref.read(authProvider).value;
-      context.go(s?.user != null ? '/' : '/login');
+      // 连通性已确认；不再做会话检测，直接回到登录页
+      context.go('/login');
     } catch (e) {
       if (!mounted) return;
       setState(() {
