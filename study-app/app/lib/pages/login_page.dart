@@ -2,7 +2,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../core/api_client.dart';
+import '../core/config.dart';
 import '../providers/auth_provider.dart';
+import '../services/server_discovery_service.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
@@ -22,7 +25,21 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       _loading = true;
       _error = null;
     });
-    final err = await ref.read(authProvider.notifier).login(_u.text.trim(), _p.text);
+    var err = await ref.read(authProvider.notifier).login(_u.text.trim(), _p.text);
+
+    // 复用错题本方法：网络层失败时自动发现局域网服务器并切换地址重试一次
+    if (err != null && (err.contains('网络连接失败') || err.contains('无法连接服务器'))) {
+      setState(() => _error = '正在自动查找局域网服务器…');
+      final discovery = ServerDiscoveryService();
+      String? found = await discovery.probeLocalhost();
+      found ??= await discovery.discover();
+      if (found != null && found != AppConfig.baseUrl) {
+        await AppConfig.setBaseUrl(found);
+        ApiClient().dio.options.baseUrl = AppConfig.apiBase;
+        err = await ref.read(authProvider.notifier).login(_u.text.trim(), _p.text);
+      }
+    }
+
     if (!mounted) return;
     setState(() => _loading = false);
     if (err != null) {

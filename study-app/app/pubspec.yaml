@@ -27,6 +27,8 @@ dependencies:
   path_provider: ^2.1.1
   # 图片查看
   photo_view: ^0.15.0
+  # 局域网服务器发现（读取本机 Wi-Fi IP）
+  network_info_plus: ^5.0.0
   # Material You
   dynamic_color: ^1.7.0
 
