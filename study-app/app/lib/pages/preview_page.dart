@@ -1,4 +1,5 @@
 /// pages/preview_page.dart —— 预览：Markdown 直接渲染；图片缩放查看；其余类型下载分享
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -82,7 +83,7 @@ class _PreviewPageState extends State<PreviewPage> {
       case 'image':
         return PhotoView(imageProvider: MemoryImage(bytes), backgroundDecoration: const BoxDecoration(color: Color(0xFF111827)));
       case 'markdown':
-        final text = String.fromCharCodes(bytes);
+        final text = utf8.decode(bytes, allowMalformed: true);
         return Markdown(
           data: text,
           selectable: true,

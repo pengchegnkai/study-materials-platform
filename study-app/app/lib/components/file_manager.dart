@@ -2,6 +2,7 @@
 /// 支持：列表/网格视图、多选、排序、右键菜单、重命名、删除、可见性切换
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../models/models.dart';
 
 typedef FileActionCallback = Future<void> Function(AdminFile);
@@ -366,10 +367,31 @@ class _FileManagerState extends ConsumerState<FileManager> {
     );
   }
 
+  /// 点击文件 → 打开预览页
+  void _openPreview(AdminFile file) {
+    context.push(
+      '/preview?key=${Uri.encodeComponent(file.key)}'
+      '&title=${Uri.encodeComponent(file.title)}'
+      '&type=${Uri.encodeComponent(_previewType(file))}',
+    );
+  }
+
+  /// 从 contentType / 扩展名推导预览类型（markdown/pptx/docx/image/other）
+  String _previewType(AdminFile file) {
+    final type = (file.contentType ?? '').toLowerCase();
+    final ext = file.key.split('.').last.toLowerCase();
+    if (type == 'markdown' || type.contains('markdown') || ['md', 'markdown'].contains(ext)) return 'markdown';
+    if (type == 'image' || type.startsWith('image/') || ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].contains(ext)) return 'image';
+    if (type == 'pptx' || type.contains('presentation') || type.contains('powerpoint') || ['ppt', 'pptx'].contains(ext)) return 'pptx';
+    if (type == 'docx' || type.contains('word') || type.contains('document') || ['doc', 'docx'].contains(ext)) return 'docx';
+    if (type.contains('pdf') || ext == 'pdf') return 'pdf';
+    return 'other';
+  }
+
   Widget _FileListTile(AdminFile file) {
     final selected = _selectedKeys.contains(file.key);
     return InkWell(
-      onTap: () => _toggleSelection(file.key),
+      onTap: () => _openPreview(file),
       onLongPress: () => _showContextMenu(context, file, Offset.zero), // 实际位置需用 GestureDetector
       child: Container(
         height: 48,
@@ -377,8 +399,10 @@ class _FileManagerState extends ConsumerState<FileManager> {
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Row(
           children: [
-            Checkbox(value: selected, onChanged: (_) => _toggleSelection(file.key)),
-            const SizedBox(width: 8),
+            if (widget.canManage) ...[
+              Checkbox(value: selected, onChanged: (_) => _toggleSelection(file.key)),
+              const SizedBox(width: 8),
+            ],
             _FileIcon(file),
             const SizedBox(width: 12),
             Expanded(
@@ -403,8 +427,8 @@ class _FileManagerState extends ConsumerState<FileManager> {
                 }
               },
               itemBuilder: (_) => [
-                const PopupMenuItem(value: 'rename', child: Row(children: [Icon(Icons.edit_outlined, size: 18), SizedBox(width: 8), Text('重命名')])),
-                PopupMenuItem(value: 'toggle', child: Row(children: [Icon(file.visibility == 'published' ? Icons.visibility_off : Icons.visibility, size: 18), SizedBox(width: 8), Text(file.visibility == 'published' ? '取消开放' : '开放')])),
+                if (widget.canManage) const PopupMenuItem(value: 'rename', child: Row(children: [Icon(Icons.edit_outlined, size: 18), SizedBox(width: 8), Text('重命名')])),
+                if (widget.canManage) PopupMenuItem(value: 'toggle', child: Row(children: [Icon(file.visibility == 'published' ? Icons.visibility_off : Icons.visibility, size: 18), SizedBox(width: 8), Text(file.visibility == 'published' ? '取消开放' : '开放')])),
                 const PopupMenuItem(value: 'props', child: Row(children: [Icon(Icons.info_outlined, size: 18), SizedBox(width: 8), Text('属性')])),
                 if (widget.canManage) const PopupMenuItem(value: 'delete', child: Row(children: [Icon(Icons.delete_outline, size: 18, color: Colors.red), SizedBox(width: 8), Text('删除', style: TextStyle(color: Colors.red))])),
               ],
@@ -419,7 +443,7 @@ class _FileManagerState extends ConsumerState<FileManager> {
   Widget _FileGridTile(AdminFile file) {
     final selected = _selectedKeys.contains(file.key);
     return InkWell(
-      onTap: () => _toggleSelection(file.key),
+      onTap: () => _openPreview(file),
       onLongPress: () {}, // 网格模式右键菜单暂用 long press 触发
       child: Container(
         decoration: BoxDecoration(
