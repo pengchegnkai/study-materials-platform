@@ -163,6 +163,8 @@ app.use('/api/*', async (c, next) => {
   c.set('user', token ? await verifySessionToken(token) : null);
   touchOnline(c.get('user'));
   await next();
+  // 登录诊断日志（临时）：记录全部 API 请求的 Cookie 与响应码
+  console.log(`[diag] ${c.req.method} ${c.req.path} cookie=${token ? '有' : '无'} -> ${c.res.status} (proto=${c.req.header('x-forwarded-proto') || 'local'})`);
 });
 
 function getUser(c) {
