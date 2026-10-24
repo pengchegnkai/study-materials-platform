@@ -122,7 +122,7 @@ class _StatCard extends StatelessWidget {
   const _StatCard(this.label, this.value, this.icon, this.color);
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Card(
       child: Padding(
@@ -153,7 +153,7 @@ class _RecentFilesTable extends StatelessWidget {
   const _RecentFilesTable({required this.files});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     if (files.isEmpty) {
       return Card(child: SizedBox(height: 100, child: Center(child: Text('暂无文件', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)))));
     }
@@ -185,7 +185,7 @@ class _TypeChart extends StatelessWidget {
   const _TypeChart({required this.data});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     if (data.isEmpty) {
       return Card(child: SizedBox(height: 100, child: Center(child: Text('暂无数据', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)))));
     }
@@ -229,7 +229,7 @@ class _VisibilityBadge extends StatelessWidget {
   const _VisibilityBadge(this.visibility);
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final published = visibility == 'published';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -393,7 +393,7 @@ class _StatusBadge extends StatelessWidget {
   const _StatusBadge(this.status);
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final active = status == 'active';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
