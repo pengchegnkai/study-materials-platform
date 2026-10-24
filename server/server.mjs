@@ -357,6 +357,7 @@ function extType(key, contentType) {
   if (['md', 'markdown'].includes(ext)) return 'markdown';
   if (['pptx', 'ppt'].includes(ext)) return 'pptx';
   if (['docx', 'doc'].includes(ext)) return 'docx';
+  if (['xlsx', 'xls', 'csv'].includes(ext)) return 'excel';
   if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(ext)) return 'image';
   if (contentType?.startsWith('image/')) return 'image';
   return 'other';

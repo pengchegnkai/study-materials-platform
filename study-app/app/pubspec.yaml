@@ -24,6 +24,9 @@ dependencies:
   # 文件选择与分享/下载
   file_picker: ^8.0.0
   share_plus: ^7.2.1
+  # Office 预览：xlsx 表格解析 + zip 解包（docx/pptx 文本提取）
+  spreadsheet_decoder: ^2.3.0
+  archive: ^3.6.1
   path_provider: ^2.1.1
   # 图片查看
   photo_view: ^0.15.0

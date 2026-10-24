@@ -10,10 +10,10 @@ import MarkdownIt from 'markdown-it';
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true });
 
-export type PreviewKind = 'markdown' | 'docx' | 'pptx' | 'image' | 'other';
+export type PreviewKind = 'markdown' | 'docx' | 'pptx' | 'excel' | 'image' | 'other';
 
 export function kindFromType(type: string): PreviewKind {
-  if (type === 'markdown' || type === 'docx' || type === 'pptx' || type === 'image') return type;
+  if (type === 'markdown' || type === 'docx' || type === 'pptx' || type === 'excel' || type === 'image') return type;
   return 'other';
 }
 
@@ -62,6 +62,44 @@ export async function renderPreview(
     const Renderer = mod.PptxRenderer || mod.default;
     const renderer = new Renderer();
     await renderer.render(buffer, container);
+    return;
+  }
+
+  if (kind === 'excel') {
+    const XLSX: any = await import('xlsx');
+    const wb = XLSX.read(buffer, { type: 'array' });
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'padding:24px;max-width:100%;overflow-x:auto;';
+    for (const name of wb.SheetNames) {
+      const sheet = wb.Sheets[name];
+      if (!sheet) continue;
+      const title = document.createElement('h3');
+      title.textContent = name;
+      title.style.cssText = 'font-size:15px;font-weight:600;margin:16px 0 8px;color:var(--preview-text,#111827);';
+      wrap.appendChild(title);
+      let html = '';
+      try {
+        html = XLSX.utils.sheet_to_html(sheet, { header: '', footer: '' });
+      } catch {
+        html = '<p style="color:#6B7280">该工作表无法解析</p>';
+      }
+      const tableWrap = document.createElement('div');
+      tableWrap.innerHTML = html;
+      const table = tableWrap.querySelector('table');
+      if (table) {
+        table.style.cssText = 'border-collapse:collapse;font-size:13px;min-width:100%;';
+        table.querySelectorAll('td,th').forEach((c: any) => {
+          c.style.cssText = 'border:1px solid #E5E7EB;padding:4px 8px;white-space:nowrap;';
+        });
+        table.querySelectorAll('tr td:first-child, tr th').forEach((c: any) => {
+          c.style.background = '#F9FAFB';
+          c.style.fontWeight = '600';
+        });
+      }
+      wrap.appendChild(tableWrap);
+    }
+    container.style.display = '';
+    container.appendChild(wrap);
     return;
   }
 
