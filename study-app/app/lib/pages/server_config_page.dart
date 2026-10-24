@@ -14,6 +14,7 @@ class ServerConfigPage extends ConsumerStatefulWidget {
 
 class _ServerConfigPageState extends ConsumerState<ServerConfigPage> {
   final _ctrl = TextEditingController();
+  final _proxyCtrl = TextEditingController();
   bool _testing = false;
   String? _error;
 
@@ -21,6 +22,7 @@ class _ServerConfigPageState extends ConsumerState<ServerConfigPage> {
   void initState() {
     super.initState();
     _ctrl.text = AppConfig.baseUrl;
+    _proxyCtrl.text = AppConfig.proxy;
   }
 
   Future<void> _saveAndTest() async {
@@ -34,6 +36,8 @@ class _ServerConfigPageState extends ConsumerState<ServerConfigPage> {
       _error = null;
     });
     await AppConfig.setBaseUrl(url);
+    await AppConfig.setProxy(_proxyCtrl.text);
+    ApiClient().applyProxy(_proxyCtrl.text);
     final auth = ref.read(authProvider.notifier);
     await auth.reload();
     final s = ref.read(authProvider).value;
@@ -71,6 +75,15 @@ class _ServerConfigPageState extends ConsumerState<ServerConfigPage> {
                       onPressed: () => _ctrl.text = u,
                     ))
                 .toList(),
+          ),
+          const SizedBox(height: 12),
+          const Text('HTTP 代理（可选，访问被墙域名时填写，如 Clash 默认 127.0.0.1:7890）',
+              style: TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _proxyCtrl,
+            keyboardType: TextInputType.text,
+            decoration: const InputDecoration(hintText: '留空 = 直连', isDense: true),
           ),
           if (_error != null)
             Padding(

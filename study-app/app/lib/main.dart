@@ -11,6 +11,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await AppConfig.load();
   await ApiClient().init(); // 提前初始化 Cookie 持久化
+  ApiClient().applyProxy(AppConfig.proxy); // 恢复代理配置
   runApp(const ProviderScope(child: StudyApp()));
 }
 

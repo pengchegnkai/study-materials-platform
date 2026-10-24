@@ -3,19 +3,31 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class AppConfig {
   static const _key = 'server_base_url';
+  static const _proxyKey = 'proxy_addr';
   static String _baseUrl = '';
+  static String _proxy = '';
   static bool _loaded = false;
 
   static String get baseUrl => _baseUrl;
   static String get apiBase => '$_baseUrl/api';
   static bool get isConfigured => _baseUrl.isNotEmpty;
 
+  /// HTTP 代理地址（如 127.0.0.1:7890），空 = 直连
+  static String get proxy => _proxy;
+
   /// 启动时从本地缓存恢复
   static Future<void> load() async {
     if (_loaded) return;
     final prefs = await SharedPreferences.getInstance();
     _baseUrl = prefs.getString(_key) ?? '';
+    _proxy = prefs.getString(_proxyKey) ?? '';
     _loaded = true;
+  }
+
+  static Future<void> setProxy(String addr) async {
+    _proxy = addr.trim();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_proxyKey, _proxy);
   }
 
   static Future<void> setBaseUrl(String url) async {

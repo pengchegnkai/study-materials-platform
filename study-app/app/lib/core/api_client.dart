@@ -1,5 +1,6 @@
 /// core/api_client.dart —— Dio 封装：baseUrl 动态、会话 Cookie 自动携带与持久化
 import 'package:dio/dio.dart';
+import 'package:dio/io.dart';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:path_provider/path_provider.dart';
@@ -34,6 +35,25 @@ class ApiClient {
     );
     _cookieJar = jar;
     dio.interceptors.add(CookieManager(jar));
+  }
+
+  /// 应用/清除 HTTP 代理（被墙域名需要经代理访问时配置，如 127.0.0.1:7890）
+  void applyProxy(String addr) {
+    final p = addr.trim();
+    if (p.isEmpty) {
+      dio.httpClientAdapter = IOHttpClientAdapter()
+        ..createHttpClient = () => HttpClient();
+    } else {
+      final parts = p.replaceFirst('http://', '').split(':');
+      final host = parts.first;
+      final port = int.tryParse(parts.length > 1 ? parts[1] : '') ?? 7890;
+      dio.httpClientAdapter = IOHttpClientAdapter()
+        ..createHttpClient = () {
+          final client = HttpClient();
+          client.findProxy = (uri) => 'PROXY $host:$port';
+          return client;
+        };
+    }
   }
 
   /// 确保已配置服务器地址
