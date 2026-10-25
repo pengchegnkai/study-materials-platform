@@ -221,16 +221,16 @@ class _PdfViewerState extends State<_PdfViewer> {
   @override
   void initState() {
     super.initState();
-    pdfx.PdfDocument.openData(widget.bytes).then((doc) {
-      if (mounted) setState(() => _controller = pdfx.PdfController(document: doc));
-    }).catchError((e) {
-      if (mounted) setState(() => _error = 'PDF 打开失败：$e');
-    });
+    try {
+      _controller = pdfx.PdfController(document: pdfx.PdfDocument.openData(widget.bytes));
+    } catch (e) {
+      _error = 'PDF 打开失败：$e';
+    }
   }
 
   @override
   void dispose() {
-    _controller?.document.dispose();
+    _controller?.dispose();
     super.dispose();
   }
 
