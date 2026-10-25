@@ -47,7 +47,7 @@ jobs:
           sed -i "s/^version:.*/version: 1.0.0-beta.${{ github.run_number }}+${{ github.run_number }}/" build_tmp/pubspec.yaml
           # 5) 固定签名：把仓库内的固定 keystore 放到 debug 签名位置，保证每次构建签名一致（防覆盖安装冲突）
           mkdir -p ~/.android
-          base64 -d study-app/android/debug.keystore.b64 > ~/.android/debug.keystore
+          base64 -d android/debug.keystore.b64 > ~/.android/debug.keystore
           # 3) 覆盖 AndroidManifest（权限 + 网络安全策略 + 中文应用名）
           cp android/app/src/main/AndroidManifest.xml \
              build_tmp/android/app/src/main/AndroidManifest.xml
