@@ -41,6 +41,7 @@ jobs:
           rm -rf build_tmp/lib
           rm -rf build_tmp/test
           cp -r app/lib build_tmp/lib
+          cp -r app/assets build_tmp/assets
           cp app/pubspec.yaml build_tmp/pubspec.yaml
           # 3) 覆盖 AndroidManifest（权限 + 网络安全策略 + 中文应用名）
           cp android/app/src/main/AndroidManifest.xml \
