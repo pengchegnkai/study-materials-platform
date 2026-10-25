@@ -22,7 +22,7 @@ class _UpdatePageState extends ConsumerState<UpdatePage> {
   String _localVersion = '—';
   int _localBuild = 0;
 
-  ({String version, int build, int size, String builtAt, String download})? _latest;
+  ({String version, int build, int size, String builtAt, String download, bool ready, bool syncing})? _latest;
   bool _checking = true;
   String? _error;
 
@@ -63,6 +63,8 @@ class _UpdatePageState extends ConsumerState<UpdatePage> {
           size: (d['size'] as num?)?.toInt() ?? 0,
           builtAt: '${d['builtAt'] ?? ''}',
           download: '${d['download'] ?? ''}',
+          ready: d['ready'] == true,
+          syncing: d['syncing'] == true,
         );
         _checking = false;
       });
@@ -86,6 +88,11 @@ class _UpdatePageState extends ConsumerState<UpdatePage> {
   Future<void> _download() async {
     final l = _latest;
     if (l == null || l.download.isEmpty) return;
+    // 安装包由服务器分发：未同步完成时提示稍后
+    if (!l.ready) {
+      _toast(l.syncing ? '新版本正在同步到服务器，请稍后再试' : '安装包暂未就绪，请稍后重新检查');
+      return;
+    }
     setState(() {
       _downloading = true;
       _progress = 0;
@@ -266,7 +273,24 @@ class _UpdatePageState extends ConsumerState<UpdatePage> {
                       Text('下载中 ${(_progress * 100).toStringAsFixed(0)}%',
                           textAlign: TextAlign.center,
                           style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
-                    ] else
+                    ] else if (!l!.ready)
+                      Row(
+                        children: [
+                          const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              l.syncing ? '新版本正在同步到服务器，稍候点击「重新检查」' : '安装包暂未就绪，请稍后重新检查',
+                              style: const TextStyle(fontSize: 12.5, color: Color(0xFF6B7280)),
+                            ),
+                          ),
+                        ],
+                      )
+                    else
                       FilledButton.icon(
                         onPressed: _download,
                         icon: const Icon(Icons.system_update_alt, size: 18),

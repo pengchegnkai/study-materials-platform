@@ -10,7 +10,7 @@ import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { DatabaseSync } from 'node:sqlite';
 import { webcrypto as crypto, createHmac, createHash, randomBytes } from 'node:crypto';
-import { readFileSync, existsSync, mkdirSync, createWriteStream, unlinkSync, statSync, renameSync, copyFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, createWriteStream, unlinkSync, statSync, renameSync, copyFileSync } from 'node:fs';
 import { createReadStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
@@ -919,30 +919,35 @@ app.get('/api/admin/dashboard', async (c) => {
   });
 });
 
-// App 滚动更新：最新版本信息（代理 GitHub Release，缓存 10 分钟）
-let _appLatestCache = { at: 0, data: null };
+// ---------- App 滚动更新：安装包由服务器缓存分发 ----------
+// CI 构建发布到 GitHub Release 后，服务器后台同步 APK 到 data/apk/，
+// 客户端统一从本服务器 /api/app/download 下载（国内直连 GitHub 不稳）。
 const APP_REPO = 'pengchegnkai/study-materials-platform';
 const APP_APK_URL = `https://github.com/${APP_REPO}/releases/latest/download/study-app-latest.apk`;
+const APK_DIR = path.join(DATA_DIR, 'apk');
+const APK_FILE = path.join(APK_DIR, 'study-app-latest.apk');
+const APK_META_FILE = path.join(APK_DIR, 'meta.json');
+let _apkSyncing = false;
+let _remoteAppInfo = null;
+let _remoteFetchedAt = 0;
 
-app.get('/api/app/latest', async (c) => {
-  const now = Date.now();
-  if (_appLatestCache.data && now - _appLatestCache.at < 10 * 60 * 1000) {
-    return c.json(_appLatestCache.data);
+function apkLocalMeta() {
+  try {
+    return JSON.parse(readFileSync(APK_META_FILE, 'utf8'));
+  } catch {
+    return null;
   }
-  const fallback = {
-    version: '',
-    build: 0,
-    size: 0,
-    builtAt: '',
-    download: APP_APK_URL,
-    notes: '',
-    source: 'fallback',
-  };
+}
+
+/// 拉取 GitHub Release 版本信息（缓存 10 分钟；失败返回 null）
+async function fetchRemoteAppInfo() {
+  const now = Date.now();
+  if (_remoteAppInfo && now - _remoteFetchedAt < 10 * 60 * 1000) return _remoteAppInfo;
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 8000);
     const resp = await fetch(`https://api.github.com/repos/${APP_REPO}/releases/tags/latest`, {
-      headers: { 'Accept': 'application/vnd.github+json', 'User-Agent': 'study-platform' },
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'study-platform' },
       signal: ctrl.signal,
     });
     clearTimeout(timer);
@@ -959,24 +964,162 @@ app.get('/api/app/latest', async (c) => {
       const m = String(rel.name || '').match(/(\d+\.\d+\.\d+-beta\.\d+)/);
       if (m) version = m[1];
     }
-    const data = {
+    _remoteAppInfo = {
       version: version || '',
       build: Number(read('build') || 0) || 0,
-      size: Number(read('size') || 0) || (asset?.size ?? 0),
+      size: Number(read('size') || 0) || asset?.size || 0,
       builtAt: read('builtAt') || rel.published_at || '',
-      download: read('download') || asset?.browser_download_url || APP_APK_URL,
+      download: APP_APK_URL,
       notes: body.slice(0, 500),
-      source: 'github',
     };
-    _appLatestCache = { at: now, data };
-    return c.json(data);
+    _remoteFetchedAt = now;
+    return _remoteAppInfo;
   } catch (e) {
-    // GitHub 不可达时返回兜底（客户端仍可走固定下载地址）
-    const data = { ...fallback, notes: `版本信息获取失败: ${String(e).slice(0, 120)}` };
-    if (_appLatestCache.data) return c.json(_appLatestCache.data);
-    _appLatestCache = { at: now - 9 * 60 * 1000, data };
-    return c.json(data);
+    console.error('[apk] 版本信息获取失败:', String(e).slice(0, 120));
+    return null;
   }
+}
+
+/// 下载加速：国内直连 GitHub 极慢（~28KB/s），镜像优先、直连兜底，逐个流式尝试
+function apkSourceUrls(downloadUrl) {
+  const url = downloadUrl || APP_APK_URL;
+  return [
+    `https://ghfast.top/${url}`,
+    `https://gh-proxy.com/${url}`,
+    url,
+  ];
+}
+
+/// 后台同步：从 GitHub 下载 APK 到本地缓存（防并发；完成后写 meta.json）
+async function syncApkFromGitHub(remote) {
+  if (_apkSyncing) return;
+  _apkSyncing = true;
+  try {
+    console.log('[apk] 开始同步安装包…');
+    mkdirSync(APK_DIR, { recursive: true });
+    const expected = remote.size || 0;
+    let lastErr = null;
+    for (const url of apkSourceUrls(remote.download)) {
+      try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 30 * 60 * 1000);
+        const resp = await fetch(url, { signal: ctrl.signal, redirect: 'follow' });
+        clearTimeout(timer);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        // 流式写盘，避免 70MB 全量占内存；每 10MB 打一条进度
+        const tmp = APK_FILE + '.tmp';
+        const out = createWriteStream(tmp);
+        const reader = resp.body.getReader();
+        let got = 0;
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (!Buffer.isBuffer(value)) value = Buffer.from(value);
+          got += value.length;
+          if (!out.write(value)) {
+            await new Promise((resolve) => out.once('drain', resolve));
+          }
+          if (got % (10 * 1024 * 1024) < value.length) {
+            console.log(`[apk] 进度 ${(got / 1024 / 1024).toFixed(0)}MB`);
+          }
+        }
+        await new Promise((resolve, reject) => {
+          out.end(resolve);
+          out.on('error', reject);
+        });
+        if (got < 1024 * 1024) throw new Error(`包体积异常 ${got}`);
+        if (expected > 0 && Math.abs(got - expected) > 1024 * 1024) {
+          throw new Error(`大小不符 期望${expected} 实际${got}`);
+        }
+        renameSync(tmp, APK_FILE);
+        writeFileSync(
+          APK_META_FILE,
+          JSON.stringify(
+            {
+              version: remote.version,
+              build: remote.build,
+              size: got,
+              builtAt: remote.builtAt,
+              syncedAt: Date.now(),
+            },
+            null,
+            2
+          )
+        );
+        console.log('[apk] 已缓存', remote.version || 'unknown', got, 'bytes');
+        return;
+      } catch (e) {
+        lastErr = e;
+        console.error(`[apk] 源失败 ${url.split('/')[2]}:`, String(e).slice(0, 120));
+        try {
+          unlinkSync(APK_FILE + '.tmp');
+        } catch {}
+      }
+    }
+    throw lastErr || new Error('全部下载源失败');
+  } catch (e) {
+    console.error('[apk] 同步失败:', String(e).slice(0, 200));
+  } finally {
+    _apkSyncing = false;
+  }
+}
+
+/// 启动后 5 秒同步一次，之后每 30 分钟检查
+setTimeout(async () => {
+  const r = await fetchRemoteAppInfo();
+  if (r) {
+    const local = apkLocalMeta();
+    if (!existsSync(APK_FILE) || !local || (r.build > 0 && r.build > (local.build || 0))) {
+      syncApkFromGitHub(r);
+    }
+  }
+}, 5000);
+setInterval(async () => {
+  const r = await fetchRemoteAppInfo();
+  if (r) {
+    const local = apkLocalMeta();
+    if (local && r.build > 0 && r.build > (local.build || 0)) syncApkFromGitHub(r);
+  }
+}, 30 * 60 * 1000);
+
+// 最新版本信息：download 统一指向服务器 /api/app/download
+app.get('/api/app/latest', async (c) => {
+  const remote = await fetchRemoteAppInfo();
+  const local = apkLocalMeta();
+  const apkReady = existsSync(APK_FILE) && local;
+  const stale = !!(remote && local && remote.build > 0 && remote.build > (local.build || 0));
+
+  if (remote && stale && !_apkSyncing) syncApkFromGitHub(remote); // 有新版本，后台同步
+
+  let info;
+  if (remote) info = { ...remote };
+  else if (apkReady) info = { version: local.version, build: local.build, size: local.size, builtAt: local.builtAt, notes: '' };
+  else return c.json({ version: '', build: 0, size: 0, builtAt: '', download: '', ready: false, syncing: false, notes: '版本信息暂不可用', source: 'none' });
+
+  return c.json({
+    ...info,
+    download: apkReady ? 'app/download' : APP_APK_URL, // 客户端 dio 会拼到 <host>/api/app/download
+    ready: apkReady && !stale,
+    syncing: _apkSyncing,
+    source: apkReady ? 'server' : 'github',
+  });
+});
+
+// 安装包下载（服务器分发）
+app.get('/api/app/download', (c) => {
+  if (!existsSync(APK_FILE)) {
+    return c.json({ error: '安装包尚未同步到服务器，请稍后重试' }, 503);
+  }
+  const stat = statSync(APK_FILE);
+  const stream = createReadStream(APK_FILE);
+  return new Response(Readable.toWeb(stream), {
+    headers: {
+      'Content-Type': 'application/vnd.android.package-archive',
+      'Content-Length': String(stat.size),
+      'Content-Disposition': 'attachment; filename="study-app-latest.apk"',
+      'Cache-Control': 'no-store',
+    },
+  });
 });
 
 // 实时日志：GET /api/admin/logs?limit=50
