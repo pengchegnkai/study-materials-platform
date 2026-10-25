@@ -1,7 +1,7 @@
 import { forwardRef, type InputHTMLAttributes, type SelectHTMLAttributes, type TextareaHTMLAttributes, type ReactNode } from 'react';
 
 const baseCls =
-  'w-full h-9 px-3 rounded-btn border border-line dark:border-gray-700 bg-white dark:bg-gray-800 text-[14px] text-ink dark:text-gray-100 placeholder:text-ink-muted dark:placeholder:text-gray-600 transition-all duration-150 ease-out focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-primary dark:focus:border-indigo-500 disabled:opacity-50';
+  'w-full h-10 px-3.5 rounded-btn border border-line dark:border-gray-700 bg-white dark:bg-gray-800 text-[14px] text-ink dark:text-gray-100 placeholder:text-ink-muted dark:placeholder:text-gray-600 transition-all duration-150 ease-out focus:outline-none focus:ring-4 focus:ring-indigo-500/15 focus:border-indigo-400 dark:focus:border-indigo-500 disabled:opacity-50';
 
 interface FieldProps {
   label?: string;

@@ -40,6 +40,17 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
     }
   }
 
+  /// 重新拉取会话（用于头像/昵称更新后刷新显示）
+  Future<void> refreshSession() async {
+    try {
+      final resp = await _svc.dio.get('/session');
+      final u = resp.data['user'];
+      if (u is Map<String, dynamic>) {
+        state = AsyncData(AuthState(user: SessionUser.fromJson(u), configured: true));
+      }
+    } catch (_) {}
+  }
+
   Future<void> logout() async {
     await _svc.logout();
     state = AsyncData(AuthState(user: null, configured: AppConfig.isConfigured));

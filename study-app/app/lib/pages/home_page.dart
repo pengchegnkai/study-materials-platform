@@ -6,6 +6,7 @@ import '../models/models.dart';
 import '../providers/auth_provider.dart';
 import '../providers/files_provider.dart';
 import '../components/file_manager.dart';
+import '../components/user_avatar.dart';
 
 class HomePage extends ConsumerWidget {
   const HomePage({super.key});
@@ -32,9 +33,9 @@ class HomePage extends ConsumerWidget {
               onPressed: () => context.push('/admin'),
             ),
           IconButton(
-            icon: const Icon(Icons.lock_outline),
-            tooltip: '修改密码',
-            onPressed: () => context.push('/change-password'),
+            tooltip: '个人中心',
+            onPressed: () => context.push('/profile'),
+            icon: const UserAvatar(radius: 14),
           ),
           IconButton(
             icon: const Icon(Icons.logout_outlined),

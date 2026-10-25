@@ -3,15 +3,20 @@ class SessionUser {
   final String id;
   final String username;
   final List<String> roles;
+  final String? avatar;
+  final String? nickname;
   bool get isAdmin => roles.contains('admin');
   bool get isTeacher => roles.contains('teacher') || isAdmin;
+  String get displayName => (nickname == null || nickname!.isEmpty) ? username : nickname!;
 
-  SessionUser({required this.id, required this.username, required this.roles});
+  SessionUser({required this.id, required this.username, required this.roles, this.avatar, this.nickname});
 
   factory SessionUser.fromJson(Map<String, dynamic> j) => SessionUser(
         id: j['id'] as String,
         username: j['username'] as String,
         roles: (j['roles'] as List).cast<String>(),
+        avatar: j['avatar'] as String?,
+        nickname: j['nickname'] as String?,
       );
 }
 

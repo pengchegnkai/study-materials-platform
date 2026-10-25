@@ -16,9 +16,9 @@ const sizeCls: Record<NonNullable<ButtonProps['size']>, string> = {
 
 const variantCls: Record<NonNullable<ButtonProps['variant']>, string> = {
   primary:
-    'bg-primary text-white hover:bg-primary-hover focus-visible:ring-2 focus-visible:ring-indigo-500/40 dark:bg-indigo-500 dark:hover:bg-indigo-600',
+    'bg-gradient-to-b from-indigo-500 to-indigo-600 text-white shadow-[0_2px_8px_rgba(79,70,229,0.28)] hover:from-indigo-500 hover:to-indigo-700 hover:shadow-[0_4px_14px_rgba(79,70,229,0.36)] active:scale-[0.985] focus-visible:ring-2 focus-visible:ring-indigo-500/40',
   secondary:
-    'bg-white dark:bg-gray-800 border border-line dark:border-gray-700 text-ink dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700 focus-visible:ring-2 focus-visible:ring-indigo-500/30',
+    'bg-white dark:bg-gray-800 border border-line dark:border-gray-700 text-ink dark:text-gray-100 shadow-[0_1px_2px_rgba(17,24,39,0.04)] hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-300 dark:hover:border-gray-600 active:scale-[0.985] focus-visible:ring-2 focus-visible:ring-indigo-500/30',
   ghost:
     'bg-transparent text-ink-secondary dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 focus-visible:ring-2 focus-visible:ring-indigo-500/30',
   danger:

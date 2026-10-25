@@ -16,18 +16,20 @@ export interface ManifestFile {
   canManage: boolean;
 }
 
-/** 类型图标：只用中性灰 + 主色（低饱和），不混用图标风格 */
+/** 类型图标：每种文件类型一个专属彩色块，直观好认 */
 function TypeIcon({ type }: { type: string }) {
   const map: Record<string, { icon: typeof FileText; cls: string }> = {
-    markdown: { icon: FileText, cls: 'bg-primary-soft text-primary dark:bg-indigo-950 dark:text-indigo-400' },
-    pptx: { icon: Presentation, cls: 'bg-orange-50 text-orange-700 dark:bg-orange-950 dark:text-orange-400' },
-    docx: { icon: FileType2, cls: 'bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-400' },
-    image: { icon: FileImage, cls: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400' },
+    markdown: { icon: FileText, cls: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400' },
+    pptx: { icon: Presentation, cls: 'bg-orange-50 text-orange-600 dark:bg-orange-950 dark:text-orange-400' },
+    docx: { icon: FileType2, cls: 'bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400' },
+    excel: { icon: FileType2, cls: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400' },
+    pdf: { icon: FileType2, cls: 'bg-rose-50 text-rose-600 dark:bg-rose-950 dark:text-rose-400' },
+    image: { icon: FileImage, cls: 'bg-teal-50 text-teal-600 dark:bg-teal-950 dark:text-teal-400' },
   };
   const item = map[type] ?? { icon: FileText, cls: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400' };
   const Icon = item.icon;
   return (
-    <span className={`shrink-0 w-10 h-10 rounded-btn flex items-center justify-center ${item.cls}`}>
+    <span className={`shrink-0 w-11 h-11 rounded-xl flex items-center justify-center ${item.cls}`}>
       <Icon size={18} strokeWidth={1.8} />
     </span>
   );
@@ -37,7 +39,7 @@ export function FileCard({ file }: { file: ManifestFile }) {
   return (
     <Link
       to={`/preview?key=${encodeURIComponent(file.key)}`}
-      className="block bg-white dark:bg-gray-900 border border-line dark:border-gray-800 rounded-card p-5 shadow-card hover:shadow-card-hover hover:-translate-y-px transition-all duration-150 ease-out cursor-pointer"
+      className="group block bg-white dark:bg-gray-900 border border-line dark:border-gray-800 rounded-card p-5 shadow-card hover:shadow-card-hover hover:-translate-y-0.5 transition-all duration-200 ease-out cursor-pointer ring-1 ring-transparent hover:ring-indigo-200/60 dark:hover:ring-indigo-900"
     >
       <div className="flex items-start gap-3">
         <TypeIcon type={file.type} />

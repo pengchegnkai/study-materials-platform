@@ -25,8 +25,8 @@ export function Modal({ open, title, onClose, locked = false, children, footer }
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in"
-      style={{ background: 'rgba(17,24,39,0.4)' }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in backdrop-blur-sm"
+      style={{ background: 'rgba(17,24,39,0.35)' }}
       onClick={() => !locked && onClose()}
     >
       <div

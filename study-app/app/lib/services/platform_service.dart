@@ -7,6 +7,7 @@ import '../models/models.dart';
 import 'token_storage.dart';
 
 class PlatformService {
+  Dio get dio => _dio;
   final Dio _dio = ApiClient().dio;
 
   void _ensure() => ApiClient().ensureConfigured();
@@ -74,6 +75,31 @@ class PlatformService {
     _ensure();
     final resp = await _dio.get('/subjects');
     return (resp.data['subjects'] as List).map((j) => Subject.fromJson(j)).toList();
+  }
+
+  // ---------- 个人资料 ----------
+
+  /// 取头像字节（需登录，带 Bearer）
+  Future<Response<List<int>>> avatarBytes(String username) async {
+    _ensure();
+    return _dio.get<List<int>>(
+      '/avatar',
+      queryParameters: {'u': username},
+      options: Options(responseType: ResponseType.bytes),
+    );
+  }
+
+  Future<String?> uploadAvatar(File file, String filename) async {
+    _ensure();
+    final form = FormData();
+    form.files.add(MapEntry('file', await MultipartFile.fromFile(file.path, filename: filename)));
+    final resp = await _dio.post('/me/avatar', data: form);
+    return resp.data['avatar'] as String?;
+  }
+
+  Future<void> updateNickname(String nickname) async {
+    _ensure();
+    await _dio.patch('/me/profile', data: {'nickname': nickname});
   }
 
   // ---------- 文件夹 ----------

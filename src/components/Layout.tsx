@@ -8,6 +8,8 @@ export interface SessionInfo {
   id: string;
   username: string;
   roles: string[];
+  avatar?: string | null;
+  nickname?: string | null;
 }
 
 interface SessionContextValue {
@@ -86,17 +88,17 @@ function AppHeader() {
 
   return (
     <>
-    <header className="sticky top-0 z-40 h-14 bg-white dark:bg-[#111827] border-b border-line dark:border-gray-800">
+    <header className="sticky top-0 z-40 h-14 bg-white/80 dark:bg-[#0B0F14]/80 backdrop-blur-xl border-b border-line/80 dark:border-gray-800/80">
       <div className="max-w-[1200px] mx-auto px-6 md:px-4 h-full flex items-center justify-between">
         <div className="flex items-center gap-8 min-w-0">
           <a href="/" className="flex items-center gap-2 shrink-0 cursor-pointer">
-            <span className="flex items-center justify-center w-6 h-6 rounded-btn bg-primary text-white">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <span className="flex items-center justify-center w-7 h-7 rounded-[9px] bg-gradient-to-br from-indigo-500 to-violet-500 text-white shadow-[0_2px_8px_rgba(79,70,229,0.35)]">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
                 <path d="M6 12v5c3 3 9 3 12 0v-5" />
               </svg>
             </span>
-            <span className="text-[15px] font-semibold text-ink dark:text-gray-100">学习资料</span>
+            <span className="text-[15px] font-bold tracking-tight text-ink dark:text-gray-100">班级资料共享</span>
           </a>
           <nav className="hidden sm:flex items-center gap-1 self-stretch">
             {navItems
@@ -114,10 +116,18 @@ function AppHeader() {
                 onClick={() => setMenuOpen((v) => !v)}
                 className="h-10 flex items-center gap-2 px-1 rounded-btn cursor-pointer transition-all duration-150 ease-out hover:bg-gray-50 dark:hover:bg-gray-800"
               >
-                <span className="w-7 h-7 rounded-full bg-primary-soft dark:bg-indigo-950 text-primary dark:text-indigo-400 text-[12px] font-medium flex items-center justify-center">
-                  {session.username.slice(0, 2).toUpperCase()}
-                </span>
-                <span className="hidden md:block text-[13px] text-ink dark:text-gray-200">{session.username}</span>
+                {session.avatar ? (
+                  <img
+                    src={`/api/avatar?u=${encodeURIComponent(session.username)}&v=${session.avatar}`}
+                    alt=""
+                    className="w-8 h-8 rounded-full object-cover ring-2 ring-primary-soft dark:ring-indigo-900"
+                  />
+                ) : (
+                  <span className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 text-white text-[12px] font-semibold flex items-center justify-center">
+                    {(session.nickname || session.username).slice(0, 2).toUpperCase()}
+                  </span>
+                )}
+                <span className="hidden md:block text-[13px] font-medium text-ink dark:text-gray-200">{session.nickname || session.username}</span>
               </button>
               {menuOpen && (
                 <>
@@ -126,15 +136,13 @@ function AppHeader() {
                     <div className="px-3 py-2 text-[12px] text-ink-muted dark:text-gray-500">
                       {session.roles.map((r) => (r === 'admin' ? '管理员' : r === 'teacher' ? '老师' : '学生')).join(' · ')}
                     </div>
-                    <button
-                      onClick={() => {
-                        setMenuOpen(false);
-                        setPwdOpen(true);
-                      }}
-                      className="w-full text-left px-3 py-2.5 text-[13px] text-ink dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all duration-150 ease-out cursor-pointer"
+                    <a
+                      href="/profile"
+                      onClick={() => setMenuOpen(false)}
+                      className="block w-full text-left px-3 py-2.5 text-[13px] text-ink dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all duration-150 ease-out cursor-pointer"
                     >
-                      修改密码
-                    </button>
+                      个人中心
+                    </a>
                     <button
                       onClick={logout}
                       className="w-full text-left px-3 py-2.5 text-[13px] text-ink dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all duration-150 ease-out cursor-pointer"
@@ -169,16 +177,13 @@ function NavLink({ to, label }: { to: string; label: string }) {
   return (
     <Link
       to={to}
-      className={`relative h-full flex items-center px-3 text-[14px] transition-all duration-150 ease-out ${
+      className={`relative h-8 my-auto flex items-center px-3.5 rounded-full text-[13.5px] font-medium transition-all duration-150 ease-out ${
         active
-          ? 'text-primary dark:text-indigo-400 font-medium'
-          : 'text-ink-secondary dark:text-gray-400 hover:text-ink dark:hover:text-gray-200'
+          ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/70 dark:text-indigo-300'
+          : 'text-ink-secondary dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800/70 hover:text-ink dark:hover:text-gray-200'
       }`}
     >
       {label}
-      {active && (
-        <span className="absolute bottom-0 left-3 right-3 h-0.5 bg-primary dark:bg-indigo-400 rounded-full" />
-      )}
     </Link>
   );
 }

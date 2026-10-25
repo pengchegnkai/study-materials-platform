@@ -19,6 +19,7 @@ import path from 'node:path';
 const ROOT = path.dirname(new URL(import.meta.url).pathname);
 const DATA_DIR = path.join(ROOT, '..', 'data');
 const FILE_DIR = path.join(DATA_DIR, 'files');
+const AVATAR_DIR = path.join(DATA_DIR, 'avatars');
 mkdirSync(FILE_DIR, { recursive: true });
 
 // ---------- 配置（环境变量，参照十二节安全底线） ----------
@@ -57,6 +58,14 @@ db.exec(`CREATE TABLE IF NOT EXISTS folders (
   created_at INTEGER NOT NULL,
   UNIQUE(subject_id, path)
 )`);
+
+// ---------- users.avatar 迁移（幂等）----------
+{
+  const cols = db.prepare("SELECT name FROM pragma_table_info('users')").all().map((r) => r.name);
+  if (!cols.includes('avatar')) db.exec("ALTER TABLE users ADD COLUMN avatar TEXT");
+  if (!cols.includes('nickname')) db.exec("ALTER TABLE users ADD COLUMN nickname TEXT");
+}
+mkdirSync(AVATAR_DIR, { recursive: true });
 
 // ---------- 环境变量管理员落库 ----------
 // files.uploader_id 外键指向 users(id)；env 管理员（env-admin）必须存在于 users 表，
@@ -455,7 +464,16 @@ app.post('/api/logout', async (c) => {
 app.get('/api/session', async (c) => {
   const user = await requireLogin(c);
   if (user && !(await isActiveUser(user))) return c.json({ error: '账号已被禁用' }, 403);
-  return c.json({ user: { id: user.sub, username: user.username, roles: user.roles } });
+  const row = db.prepare('SELECT avatar, nickname FROM users WHERE id = ?').get(user.sub);
+  return c.json({
+    user: {
+      id: user.sub,
+      username: user.username,
+      roles: user.roles,
+      avatar: row?.avatar ?? null,
+      nickname: row?.nickname ?? null,
+    },
+  });
 });
 
 app.get('/api/subjects', async (c) => {
@@ -614,7 +632,7 @@ app.delete('/api/delete', async (c) => {
 app.get('/api/admin/users', async (c) => {
   if (!(await requireAdmin(c))) return;
   const rows = db.prepare(
-    `SELECT u.id, u.username, u.status, u.created_at,
+    `SELECT u.id, u.username, u.status, u.created_at, u.avatar, u.nickname,
             COALESCE((SELECT GROUP_CONCAT(r.name) FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = u.id), '') AS roles,
             COALESCE((SELECT GROUP_CONCAT(s.name) FROM user_subjects us JOIN subjects s ON s.id = us.subject_id WHERE us.user_id = u.id), '') AS subjects
      FROM users u ORDER BY u.created_at DESC`
@@ -622,6 +640,7 @@ app.get('/api/admin/users', async (c) => {
   return c.json({
     users: rows.map((r) => ({
       id: r.id, username: r.username, status: r.status, createdAt: r.created_at,
+      avatar: r.avatar ?? null, nickname: r.nickname ?? null,
       roles: r.roles ? r.roles.split(',') : [], subjects: r.subjects ? r.subjects.split(',') : [],
     })),
   });
@@ -1192,6 +1211,63 @@ app.post('/api/copy', async (c) => {
     return c.json({ ok: true, folder: newBase, copied });
   }
   return c.json({ error: '缺少 key 或 folder' }, 400);
+});
+
+// 头像：GET /api/avatar?u=<username>（需登录）
+app.get('/api/avatar', async (c) => {
+  const me = await requireLogin(c);
+  if (!me) return;
+  const username = c.req.query('u') || '';
+  let row = db.prepare('SELECT id, avatar FROM users WHERE username = ?').get(username);
+  if (!row && username === me.username) row = db.prepare('SELECT id, avatar FROM users WHERE id = ?').get(me.sub);
+  if (!row || !row.avatar) return c.json({ error: '无头像' }, 404);
+  const full = path.resolve(AVATAR_DIR, row.avatar);
+  if (!full.startsWith(AVATAR_DIR) || !existsSync(full)) return c.json({ error: '无头像' }, 404);
+  const ext = row.avatar.split('.').pop()?.toLowerCase();
+  const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+  const stream = Readable.toWeb(createReadStream(full));
+  return new Response(stream, {
+    headers: {
+      'Content-Type': mime,
+      'Cache-Control': 'private, max-age=300',
+    },
+  });
+});
+
+// 头像：POST /api/me/avatar（multipart 图片，≤2MB）
+app.post('/api/me/avatar', async (c) => {
+  const me = await requireActive(c);
+  if (!me) return;
+  const form = await c.req.formData().catch(() => null);
+  if (!form) return c.json({ error: '请求格式错误' }, 400);
+  const file = form.get('file');
+  if (!file || typeof file === 'string' || file.size === 0) return c.json({ error: '缺少图片' }, 400);
+  if (file.size > 2 * 1024 * 1024) return c.json({ error: '图片不能超过 2MB' }, 400);
+  const type = file.type || '';
+  const extMap = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' };
+  const ext = extMap[type];
+  if (!ext) return c.json({ error: '仅支持 PNG/JPG/WebP 图片' }, 400);
+
+  const filename = `${encodeURIComponent(me.username)}.${ext}`;
+  const full = path.join(AVATAR_DIR, filename);
+  await pipeline(Readable.fromWeb(file.stream()), createWriteStream(full));
+  // 清掉旧格式文件
+  for (const other of ['png', 'jpg', 'webp']) {
+    const f = path.join(AVATAR_DIR, `${encodeURIComponent(me.username)}.${other}`);
+    if (other !== ext && existsSync(f)) { try { unlinkSync(f); } catch {} }
+  }
+  db.prepare('UPDATE users SET avatar = ? WHERE id = ?').run(filename, me.sub);
+  return c.json({ ok: true, avatar: filename });
+});
+
+// 个人资料：PATCH /api/me/profile（昵称）
+app.patch('/api/me/profile', async (c) => {
+  const me = await requireActive(c);
+  if (!me) return;
+  const body = await c.req.json().catch(() => ({}));
+  const nickname = String(body.nickname ?? '').trim().slice(0, 24);
+  db.prepare('UPDATE users SET nickname = ? WHERE id = ?').run(nickname || null, me.sub);
+  return c.json({ ok: true, nickname: nickname || null });
 });
 
 // 修改自己的密码（错题本同款：验证旧密码，改后吊销全部 refresh token）

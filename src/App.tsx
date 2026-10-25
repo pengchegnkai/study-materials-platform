@@ -8,6 +8,7 @@ import PreviewPage from './pages/PreviewPage';
 import LoginPage from './pages/LoginPage';
 import TeacherPage from './pages/TeacherPage';
 import AdminPage from './pages/AdminPage';
+import ProfilePage from './pages/ProfilePage';
 
 /** 页面切换 fade-in 150ms（不做滑动/弹跳） */
 function FadeIn({ children }: { children: React.ReactNode }) {
@@ -73,6 +74,18 @@ export default function App() {
               <ProtectedRoute roles={['admin']}>
                 <FadeIn>
                   <AdminPage />
+                </FadeIn>
+              </ProtectedRoute>
+            </Layout>
+          }
+        />
+        <Route
+          path="/profile"
+          element={
+            <Layout>
+              <ProtectedRoute>
+                <FadeIn>
+                  <ProfilePage />
                 </FadeIn>
               </ProtectedRoute>
             </Layout>
