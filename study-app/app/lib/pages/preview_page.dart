@@ -246,28 +246,24 @@ class _OfficePreviewPageState extends State<OfficePreviewPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-      ),
-      body: Stack(
-        children: [
-          WebViewWidget(controller: _controller!),
-          if (!_pageLoaded || !_injected)
-            Container(
-              color: Colors.white,
-              child: Center(
-                child: _jsError != null
-                    ? Padding(padding: const EdgeInsets.all(24), child: Text(_jsError!, textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13)))
-                    : Column(mainAxisSize: MainAxisSize.min, children: const [
-                        CircularProgressIndicator(),
-                        SizedBox(height: 16),
-                        Text('正在渲染文档…', style: TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
-                      ]),
-              ),
+    // 作为 PreviewPage 的 body 嵌入，不包 Scaffold/AppBar（避免双标题栏）
+    return Stack(
+      children: [
+        WebViewWidget(controller: _controller!),
+        if (!_pageLoaded || !_injected)
+          Container(
+            color: Colors.white,
+            child: Center(
+              child: _jsError != null
+                  ? Padding(padding: const EdgeInsets.all(24), child: Text(_jsError!, textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13)))
+                  : Column(mainAxisSize: MainAxisSize.min, children: const [
+                      CircularProgressIndicator(),
+                      SizedBox(height: 16),
+                      Text('正在渲染文档…', style: TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
+                    ]),
             ),
-        ],
-      ),
+          ),
+      ],
     );
   }
 }

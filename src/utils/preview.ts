@@ -82,8 +82,9 @@ export async function renderPreview(
   if (kind === 'pptx') {
     const mod: any = await import('@aiden0z/pptx-renderer');
     const Renderer = mod.PptxRenderer || mod.default;
-    const renderer = new Renderer();
-    await renderer.render(buffer, container);
+    // 容器在构造函数传入；preview 只接收数据（库无 render 方法）
+    const renderer = new Renderer(container);
+    await renderer.preview(buffer);
     return;
   }
 
