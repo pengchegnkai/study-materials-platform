@@ -46,7 +46,3 @@ flutter:
   uses-material-design: true
   assets:
     - assets/office/preview.html
-    - assets/office/jszip.min.js
-    - assets/office/docx-preview.min.js
-    - assets/office/xlsx.full.min.js
-    - assets/office/pptx-renderer.es.js
