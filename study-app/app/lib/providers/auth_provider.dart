@@ -5,6 +5,7 @@ import '../core/api_client.dart';
 import '../core/config.dart';
 import '../models/models.dart';
 import '../services/platform_service.dart';
+import '../services/token_storage.dart';
 
 class AuthState {
   final SessionUser? user;
@@ -21,10 +22,23 @@ class AuthState {
 class AuthNotifier extends AsyncNotifier<AuthState> {
   final _svc = PlatformService();
 
-  /// 启动时只读本地配置，不发起任何网络请求
+  /// 启动：读本地配置 + 若存在 token 则恢复登录状态（保持登录）
   @override
   Future<AuthState> build() async {
     await AppConfig.load();
+    await TokenStorage.load();
+    if (TokenStorage.accessTokenSync != null) {
+      try {
+        final resp = await _svc.dio.get('/session');
+        final u = resp.data['user'];
+        if (u is Map<String, dynamic>) {
+          return AuthState(user: SessionUser.fromJson(u), configured: true, loading: false);
+        }
+      } catch (_) {
+        // token 失效：清掉，回到未登录
+        await TokenStorage.clear();
+      }
+    }
     return AuthState(user: null, configured: AppConfig.isConfigured, loading: false);
   }
 

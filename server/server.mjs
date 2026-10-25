@@ -79,6 +79,25 @@ if (ADMIN_USERNAME) {
   ).run(ADMIN_USERNAME, Date.now());
 }
 
+// ---------- 活动日志（实时日志 / 数据看板用） ----------
+db.exec(`CREATE TABLE IF NOT EXISTS activity_logs (
+  id TEXT PRIMARY KEY,
+  user_id TEXT,
+  username TEXT,
+  action TEXT NOT NULL,
+  detail TEXT,
+  ip TEXT,
+  created_at INTEGER NOT NULL
+)`);
+db.exec('CREATE INDEX IF NOT EXISTS idx_activity_created ON activity_logs(created_at)');
+
+async function logActivity(user, action, detail = '') {
+  try {
+    db.prepare('INSERT INTO activity_logs (id, user_id, username, action, detail, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(rid('log'), user?.sub ?? null, user?.username ?? 'system', action, String(detail).slice(0, 300), Date.now());
+  } catch {}
+}
+
 // ---------- 密码哈希（PBKDF2-SHA256 + 恒定时间比较，与 Cloudflare 版一致） ----------
 const ITERATIONS = 100000;
 
@@ -410,11 +429,16 @@ app.post('/api/login', async (c) => {
   }
 
   if (ADMIN_PASSWORD_HASH && username === ADMIN_USERNAME) {
-    if (await verifyPassword(password, ADMIN_PASSWORD_HASH)) {
+    // 若管理员在后台改过密码，会写入 DB；否则用环境变量里的初始密码
+    const envRow = db.prepare("SELECT password_hash FROM users WHERE id = 'env-admin'").get();
+    const dbHash = envRow?.password_hash && !envRow.password_hash.startsWith('pbkdf2$100000$disabled') ? envRow.password_hash : null;
+    const okPwd = dbHash ? await verifyPassword(password, dbHash) : await verifyPassword(password, ADMIN_PASSWORD_HASH);
+    if (okPwd) {
       const token = await createSessionToken('env-admin', username, ['admin']);
       c.header('Set-Cookie', sessionCookie(token));
       const accessToken = signJWT({ sub: 'env-admin', username, roles: ['admin'], exp: Math.floor(Date.now() / 1000) + ACCESS_TTL });
       const refreshToken = issueRefresh('env-admin', c.req.header('user-agent'));
+      await logActivity({ sub: 'env-admin', username }, 'login', '管理员登录');
       return c.json({ ok: true, roles: ['admin'], accessToken, refreshToken });
     }
     await new Promise((r) => setTimeout(r, 500));
@@ -436,6 +460,7 @@ app.post('/api/login', async (c) => {
   c.header('Set-Cookie', sessionCookie(token));
   const accessToken = signJWT({ sub: row.id, username: row.username, roles, exp: Math.floor(Date.now() / 1000) + ACCESS_TTL });
   const refreshToken = issueRefresh(row.id, c.req.header('user-agent'));
+  await logActivity({ sub: row.id, username: row.username }, 'login', '登录成功');
   return c.json({ ok: true, roles, accessToken, refreshToken });
 });
 
@@ -611,6 +636,7 @@ app.post('/api/upload', async (c) => {
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(key, file.name || 'file', finalSubjectId, user.sub, user.username, visibility, Date.now(), file.size, file.type || 'application/octet-stream');
 
+  await logActivity(user, 'upload', `上传 ${file.name || 'file'}${folderPath ? ` 到 ${folderPath}` : ''}`);
   return c.json({ ok: true, key, subject: subjectName });
 });
 
@@ -642,6 +668,7 @@ app.delete('/api/delete', async (c) => {
   const full = filePathOf(key);
   if (full && existsSync(full)) unlinkSync(full);
   db.prepare('DELETE FROM files WHERE key = ?').run(key);
+  await logActivity(user, 'delete', `删除 ${key.split('/').pop()}`);
   return c.json({ ok: true });
 });
 
@@ -875,11 +902,74 @@ app.get('/api/admin/dashboard', async (c) => {
   });
 });
 
+// 实时日志：GET /api/admin/logs?limit=50
+app.get('/api/admin/logs', async (c) => {
+  if (!(await requireAdmin(c))) return;
+  const limit = Math.min(Number(c.req.query('limit') || 50) || 50, 200);
+  const rows = db.prepare(
+    'SELECT id, username, action, detail, created_at FROM activity_logs ORDER BY created_at DESC LIMIT ?'
+  ).all(limit);
+  return c.json({
+    logs: rows.map((r) => ({
+      id: r.id, username: r.username, action: r.action, detail: r.detail, createdAt: r.created_at,
+    })),
+  });
+});
+
+// 24 小时图表：每小时上传数 / 登录数 / 活跃用户
+app.get('/api/admin/chart24h', async (c) => {
+  if (!(await requireAdmin(c))) return;
+  const now = Date.now();
+  const startHour = Math.floor((now - 23 * 3600 * 1000) / 3600000) * 3600000;
+  const buckets = [];
+  for (let i = 0; i < 24; i++) {
+    const from = startHour + i * 3600000;
+    buckets.push({ from, to: from + 3600000, uploads: 0, logins: 0, activeUsers: 0 });
+  }
+  const rows = db.prepare(
+    'SELECT action, username, created_at FROM activity_logs WHERE created_at >= ?'
+  ).all(startHour);
+  const activeSets = buckets.map(() => new Set());
+  for (const r of rows) {
+    const idx = Math.floor((r.created_at - startHour) / 3600000);
+    if (idx < 0 || idx >= 24) continue;
+    if (r.action === 'upload') buckets[idx].uploads++;
+    if (r.action === 'login') buckets[idx].logins++;
+    if (r.username) activeSets[idx].add(r.username);
+  }
+  buckets.forEach((b, i) => { b.activeUsers = activeSets[i].size; });
+  return c.json({
+    online: countOnline(),
+    points: buckets.map((b) => ({
+      hour: new Date(b.from).getHours(),
+      label: `${String(new Date(b.from).getHours()).padStart(2, '0')}:00`,
+      uploads: b.uploads,
+      logins: b.logins,
+      activeUsers: b.activeUsers,
+    })),
+  });
+});
+
 // 文件夹：列出（folders 表 + 文件 key 隐含目录合并）
 app.get('/api/folders', async (c) => {
   const user = await requireLogin(c);
   if (!user) return;
   const subjectId = c.req.query('subjectId') || null;
+  const mine = c.req.query('mine') === '1' && !user.roles.includes('admin');
+  // 老师的科目白名单（名称）：文件夹路径首段在这些科目内才可见
+  let mySubjectNames = null;
+  if (mine) {
+    mySubjectNames = new Set(
+      db.prepare(
+        `SELECT s.name FROM subjects s WHERE s.id IN (SELECT subject_id FROM user_subjects WHERE user_id = ?)`
+      ).all(user.sub).map((r) => r.name)
+    );
+  }
+  const inMySubjects = (dir) => {
+    if (!mySubjectNames) return true;
+    const first = (dir || '').split('/')[0];
+    return mySubjectNames.has(first);
+  };
   const set = new Set();
   let subjectName = null;
   if (subjectId) {
@@ -893,14 +983,16 @@ app.get('/api/folders', async (c) => {
         (subjectName && (r.path === subjectName || r.path.startsWith(subjectName + '/')));
       if (!belongs) continue;
     }
+    if (!inMySubjects(r.path)) continue;
     set.add(r.path);
   }
-  // 从文件 key 提取隐含目录（按文件科目归属过滤）
-  const rows = db.prepare('SELECT key, subject_id FROM files').all();
+  // 从文件 key 提取隐含目录（按文件科目归属过滤；老师仅限自己科目）
+  const rows = db.prepare('SELECT key, subject_id, uploader_id FROM files').all();
   for (const r of rows) {
     if (subjectId && r.subject_id !== subjectId) continue;
     const dir = dirFromKey(r.key);
-    if (dir) set.add(dir);
+    if (!dir || !inMySubjects(dir)) continue;
+    set.add(dir);
   }
   return c.json({ folders: Array.from(set).sort() });
 });
@@ -1096,6 +1188,7 @@ app.post('/api/move', async (c) => {
     mkdirSync(path.dirname(newFull), { recursive: true });
     renameSync(oldFull, newFull);
     db.prepare('UPDATE files SET key = ? WHERE key = ?').run(newKey, chk.row.key);
+    await logActivity(user, 'move', `移动 ${chk.row.key.split('/').pop()} 到 ${targetDir || '根目录'}`);
     return c.json({ ok: true, key: newKey });
   }
 
@@ -1176,6 +1269,7 @@ app.post('/api/copy', async (c) => {
       `INSERT INTO files (key, title, subject_id, uploader_id, uploader_username, visibility, uploaded_at, size, content_type)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(newKey, chk.row.title, chk.row.subject_id, user.sub, user.username, chk.row.visibility, Date.now(), stat.size, chk.row.content_type);
+    await logActivity(user, 'copy', `复制 ${chk.row.key.split('/').pop()} 到 ${targetDir || '根目录'}`);
     return c.json({ ok: true, key: newKey });
   }
 
@@ -1298,9 +1392,22 @@ app.post('/api/change-password', async (c) => {
   if (newPassword.length < 6) return c.json({ error: '新密码至少 6 位' }, 400);
   const row = db.prepare('SELECT id, username, password_hash FROM users WHERE id = ?').get(user.sub);
   if (!row) return c.json({ error: '用户不存在' }, 404);
-  if (!(await verifyPassword(oldPassword, row.password_hash))) return c.json({ error: '旧密码错误' }, 401);
+
+  // env 管理员：初始密码来自环境变量（DB 里是占位哈希），改过之后用 DB 哈希
+  const isEnvAdmin = row.id === 'env-admin';
+  const dbHashUsable = row.password_hash && !row.password_hash.startsWith('pbkdf2$100000$disabled');
+  let oldOk = false;
+  if (isEnvAdmin) {
+    if (dbHashUsable) oldOk = await verifyPassword(oldPassword, row.password_hash);
+    if (!oldOk && ADMIN_PASSWORD_HASH) oldOk = await verifyPassword(oldPassword, ADMIN_PASSWORD_HASH);
+  } else {
+    oldOk = await verifyPassword(oldPassword, row.password_hash);
+  }
+  if (!oldOk) return c.json({ error: '旧密码错误' }, 401);
+
   db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(await hashPassword(newPassword), row.id);
   db.prepare('UPDATE refresh_tokens SET revoked = 1 WHERE user_id = ?').run(row.id);
+  await logActivity(user, 'password_change', '修改了登录密码');
   return c.json({ ok: true, message: '密码已修改，其他设备已下线' });
 });
 

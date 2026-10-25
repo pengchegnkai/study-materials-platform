@@ -1,8 +1,7 @@
-/// pages/profile_page.dart —— 个人中心：头像、昵称、修改密码
+/// pages/profile_page.dart —— 个人中心：资料卡 + 二级菜单（改密/服务器/切换账号/退出）
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -23,36 +22,19 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
   final _svc = PlatformService();
   Uint8List? _avatarBytes;
   bool _uploading = false;
-  late final TextEditingController _nickCtrl;
-  final _oldPwd = TextEditingController();
-  final _newPwd = TextEditingController();
-  final _confirmPwd = TextEditingController();
-  bool _pwdLoading = false;
 
   @override
   void initState() {
     super.initState();
-    final user = ref.read(authProvider).value?.user;
-    _nickCtrl = TextEditingController(text: user?.nickname ?? '');
-    _loadAvatar(user);
+    _loadAvatar();
   }
 
-  @override
-  void dispose() {
-    _nickCtrl.dispose();
-    _oldPwd.dispose();
-    _newPwd.dispose();
-    _confirmPwd.dispose();
-    super.dispose();
-  }
-
-  Future<void> _loadAvatar(SessionUser? user) async {
-    final u = user ?? ref.read(authProvider).value?.user;
+  Future<void> _loadAvatar() async {
+    final u = ref.read(authProvider).value?.user;
     if (u == null || u.avatar == null || u.avatar!.isEmpty) return;
     try {
       final resp = await _svc.avatarBytes(u.username);
-      if (!mounted) return;
-      setState(() => _avatarBytes = Uint8List.fromList(resp.data ?? []));
+      if (mounted) setState(() => _avatarBytes = Uint8List.fromList(resp.data ?? []));
     } catch (_) {}
   }
 
@@ -63,11 +45,9 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     setState(() => _uploading = true);
     try {
       await _svc.uploadAvatar(File(path), res!.files.single.name);
-      // 刷新会话里的头像字段
       await ref.read(authProvider.notifier).refreshSession();
-      final user = ref.read(authProvider).value?.user;
       setState(() => _avatarBytes = null);
-      await _loadAvatar(user);
+      await _loadAvatar();
       _toast('头像已更新');
     } catch (e) {
       _toast('上传失败：$e'.replaceFirst('Exception: ', ''));
@@ -76,9 +56,27 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     }
   }
 
-  Future<void> _saveNickname() async {
+  Future<void> _editNickname() async {
+    final user = ref.read(authProvider).value?.user;
+    final ctrl = TextEditingController(text: user?.nickname ?? '');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('修改昵称'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: InputDecoration(hintText: user?.username),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('保存')),
+        ],
+      ),
+    );
+    if (ok != true) return;
     try {
-      await _svc.updateNickname(_nickCtrl.text.trim());
+      await _svc.updateNickname(ctrl.text.trim());
       await ref.read(authProvider.notifier).refreshSession();
       _toast('昵称已保存');
     } catch (e) {
@@ -86,33 +84,21 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     }
   }
 
-  Future<void> _changePassword() async {
-    if (_newPwd.text.length < 6) {
-      _toast('新密码至少 6 位');
-      return;
-    }
-    if (_newPwd.text != _confirmPwd.text) {
-      _toast('两次输入的新密码不一致');
-      return;
-    }
-    setState(() => _pwdLoading = true);
-    try {
-      await _svc.dio.post('/change-password', data: {
-        'oldPassword': _oldPwd.text,
-        'newPassword': _newPwd.text,
-      });
-      _oldPwd.clear();
-      _newPwd.clear();
-      _confirmPwd.clear();
-      _toast('密码已修改，其他设备已下线');
-    } on DioException catch (e) {
-      final msg = e.response?.statusCode == 401 ? '旧密码错误' : (e.response?.data is Map ? '${e.response?.data['error']}' : '$e');
-      _toast(msg.replaceFirst('Exception: ', ''));
-    } catch (e) {
-      _toast('$e'.replaceFirst('Exception: ', ''));
-    } finally {
-      if (mounted) setState(() => _pwdLoading = false);
-    }
+  Future<void> _switchAccount() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('切换账号'),
+        content: const Text('将退出当前账号并回到登录页，可输入其他账号登录。'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('切换')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await ref.read(authProvider.notifier).logout();
+    if (mounted) context.go('/login');
   }
 
   void _toast(String msg) {
@@ -123,7 +109,6 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(authProvider).value?.user;
-    final cs = Theme.of(context).colorScheme;
     if (user == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
@@ -136,7 +121,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // 头像卡
+          // 资料卡
           Card(
             child: Padding(
               padding: const EdgeInsets.all(20),
@@ -147,10 +132,10 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                     child: Stack(
                       children: [
                         _avatarBytes != null
-                            ? CircleAvatar(radius: 40, backgroundImage: MemoryImage(_avatarBytes!))
+                            ? CircleAvatar(radius: 36, backgroundImage: MemoryImage(_avatarBytes!))
                             : Container(
-                                width: 80,
-                                height: 80,
+                                width: 72,
+                                height: 72,
                                 alignment: Alignment.center,
                                 decoration: const BoxDecoration(
                                   shape: BoxShape.circle,
@@ -162,107 +147,100 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                                 ),
                                 child: Text(
                                   user.displayName.characters.take(2).toString().toUpperCase(),
-                                  style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w600),
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.w600),
                                 ),
                               ),
                         Positioned(
                           right: 0,
                           bottom: 0,
                           child: Container(
-                            padding: const EdgeInsets.all(6),
+                            padding: const EdgeInsets.all(5),
                             decoration: BoxDecoration(
-                              color: cs.primary,
+                              color: Theme.of(context).colorScheme.primary,
                               shape: BoxShape.circle,
                               border: Border.all(color: Colors.white, width: 2),
                             ),
                             child: _uploading
-                                ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                : const Icon(Icons.camera_alt, size: 14, color: Colors.white),
+                                ? const SizedBox(
+                                    width: 12,
+                                    height: 12,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2, color: Colors.white))
+                                : const Icon(Icons.camera_alt, size: 12, color: Colors.white),
                           ),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  Text(user.displayName, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 4),
-                  Text('${user.username} · $roles', style: const TextStyle(fontSize: 12.5, color: Color(0xFF6B7280))),
-                  const SizedBox(height: 4),
-                  const Text('点击头像更换（PNG/JPG/WebP，≤2MB）', style: TextStyle(fontSize: 11.5, color: Color(0xFF9CA3AF))),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          // 昵称
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('昵称', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _nickCtrl,
-                    decoration: InputDecoration(hintText: user.username, isDense: true),
-                  ),
                   const SizedBox(height: 10),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: FilledButton(onPressed: _saveNickname, child: const Text('保存昵称')),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          // 修改密码
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(children: [
-                    Icon(Icons.lock_outline, size: 16, color: cs.primary),
-                    const SizedBox(width: 6),
-                    const Text('修改密码', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                  ]),
-                  const SizedBox(height: 12),
-                  TextField(controller: _oldPwd, obscureText: true, decoration: const InputDecoration(labelText: '旧密码', isDense: true)),
-                  const SizedBox(height: 10),
-                  TextField(controller: _newPwd, obscureText: true, decoration: const InputDecoration(labelText: '新密码（至少 6 位）', isDense: true)),
-                  const SizedBox(height: 10),
-                  TextField(controller: _confirmPwd, obscureText: true, decoration: const InputDecoration(labelText: '确认新密码', isDense: true)),
-                  const SizedBox(height: 12),
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Expanded(child: Text('修改后其他设备会下线', style: TextStyle(fontSize: 11.5, color: Color(0xFF9CA3AF)), maxLines: 2)),
-                      const SizedBox(width: 8),
-                      FilledButton(
-                        onPressed: _pwdLoading ? null : _changePassword,
-                        child: _pwdLoading
-                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                            : const Text('确认修改'),
+                      Text(user.displayName,
+                          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
+                      const SizedBox(width: 4),
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.edit_outlined, size: 15),
+                        tooltip: '修改昵称',
+                        onPressed: _editNickname,
                       ),
                     ],
                   ),
+                  Text('${user.username} · $roles',
+                      style: const TextStyle(fontSize: 12.5, color: Color(0xFF6B7280))),
                 ],
               ),
             ),
           ),
           const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: () async {
+
+          // 二级菜单
+          Card(
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                _menuTile(Icons.lock_outline, '修改密码', '定期更换更安全',
+                    () => context.push('/change-password')),
+                const Divider(height: 1, indent: 56),
+                _menuTile(Icons.dns_outlined, '服务器设置', '当前地址可在设置中修改',
+                    () => context.push('/server-config')),
+                const Divider(height: 1, indent: 56),
+                _menuTile(Icons.swap_horiz, '切换账号', '退出并登录其他账号', _switchAccount),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Card(
+            clipBehavior: Clip.antiAlias,
+            child: _menuTile(Icons.logout_outlined, '退出登录', null, () async {
               await ref.read(authProvider.notifier).logout();
-              if (context.mounted) context.go('/login');
-            },
-            icon: const Icon(Icons.logout_outlined, size: 18),
-            label: const Text('退出登录'),
+              if (mounted) context.go('/login');
+            }, danger: true),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _menuTile(IconData icon, String title, String? subtitle, VoidCallback onTap,
+      {bool danger = false}) {
+    final cs = Theme.of(context).colorScheme;
+    return ListTile(
+      leading: Icon(icon, size: 20, color: danger ? Colors.red : cs.primary),
+      title: Text(title,
+          style: TextStyle(
+              fontSize: 14.5,
+              fontWeight: FontWeight.w500,
+              color: danger ? Colors.red : null)),
+      subtitle: subtitle == null
+          ? null
+          : Text(subtitle, style: const TextStyle(fontSize: 11.5, color: Color(0xFF9CA3AF))),
+      trailing: const Icon(Icons.chevron_right, size: 18, color: Color(0xFFC4C8D0)),
+      onTap: onTap,
     );
   }
 }

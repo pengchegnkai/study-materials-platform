@@ -104,9 +104,12 @@ class PlatformService {
 
   // ---------- 文件夹 ----------
 
-  Future<List<String>> folders({String? subjectId}) async {
+  Future<List<String>> folders({String? subjectId, bool mine = false}) async {
     _ensure();
-    final resp = await _dio.get('/folders', queryParameters: {if (subjectId != null) 'subjectId': subjectId});
+    final resp = await _dio.get('/folders', queryParameters: {
+      if (subjectId != null) 'subjectId': subjectId,
+      if (mine) 'mine': '1',
+    });
     return (resp.data['folders'] as List).cast<String>();
   }
 

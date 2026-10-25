@@ -1,4 +1,6 @@
 /// pages/admin_page.dart —— 管理员后台（仪表盘、文件、用户、科目）
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -15,7 +17,7 @@ class AdminPage extends ConsumerStatefulWidget {
 }
 
 class _AdminPageState extends ConsumerState<AdminPage> with SingleTickerProviderStateMixin {
-  late final TabController _tabController = TabController(length: 4, vsync: this);
+  late final TabController _tabController = TabController(length: 6, vsync: this);
 
   @override
   void dispose() {
@@ -51,16 +53,20 @@ class _AdminPageState extends ConsumerState<AdminPage> with SingleTickerProvider
             Tab(icon: Icon(Icons.folder_outlined), text: '文件管理'),
             Tab(icon: Icon(Icons.people_outlined), text: '用户管理'),
             Tab(icon: Icon(Icons.subject_outlined), text: '科目管理'),
+            Tab(icon: Icon(Icons.show_chart_outlined), text: '24 小时曲线'),
+            Tab(icon: Icon(Icons.receipt_long_outlined), text: '实时日志'),
           ],
         ),
       ),
       body: TabBarView(
         controller: _tabController,
         children: const [
-          _DashboardTab(),
+          _DashboardTab(onOpenChart: () => _tabController.animateTo(4), onOpenLogs: () => _tabController.animateTo(5)),
           _FilesTab(),
           _UsersTab(),
           _SubjectsTab(),
+          _ChartTab(),
+          _LogsTab(),
         ],
       ),
     );
@@ -69,7 +75,9 @@ class _AdminPageState extends ConsumerState<AdminPage> with SingleTickerProvider
 
 // ---------- 仪表盘 ----------
 class _DashboardTab extends ConsumerWidget {
-  const _DashboardTab();
+  final VoidCallback onOpenChart;
+  final VoidCallback onOpenLogs;
+  const _DashboardTab({required this.onOpenChart, required this.onOpenLogs});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -107,7 +115,26 @@ class _DashboardTab extends ConsumerWidget {
               ],
               );
             }),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
+            // 二级菜单入口
+            Row(
+              children: [
+                _SubMenuChip(
+                  icon: Icons.show_chart_outlined,
+                  label: '24 小时曲线',
+                  color: const Color(0xFF4F46E5),
+                  onTap: onOpenChart,
+                ),
+                const SizedBox(width: 8),
+                _SubMenuChip(
+                  icon: Icons.receipt_long_outlined,
+                  label: '实时日志',
+                  color: const Color(0xFF059669),
+                  onTap: onOpenLogs,
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
             Text('最近上传', style: theme.textTheme.titleLarge),
             const SizedBox(height: 12),
             _RecentFilesTable(files: d.recentFiles),
@@ -584,4 +611,280 @@ String formatSize(int? bytes) {
   if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
   if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+}
+
+
+// ---------- 二级菜单入口胶囊 ----------
+class _SubMenuChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+  const _SubMenuChip({required this.icon, required this.label, required this.color, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Theme.of(context).dividerColor),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 15, color: color),
+            const SizedBox(width: 6),
+            Text(label, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------- 24 小时曲线（二级页） ----------
+class _ChartTab extends ConsumerStatefulWidget {
+  const _ChartTab();
+
+  @override
+  ConsumerState<_ChartTab> createState() => _ChartTabState();
+}
+
+class _ChartTabState extends ConsumerState<_ChartTab> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 60), (_) {
+      if (mounted) ref.invalidate(adminChart24hProvider);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final chart = ref.watch(adminChart24hProvider);
+    final theme = Theme.of(context);
+    return RefreshIndicator(
+      onRefresh: () async => ref.invalidate(adminChart24hProvider),
+      child: chart.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => Center(child: Text('加载失败: $e', style: TextStyle(color: theme.colorScheme.error))),
+        data: (d) {
+          final maxV = d.points.fold<int>(1, (m, p) => [m, p.uploads, p.logins].reduce((a, b) => a > b ? a : b));
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.circle, size: 8, color: Color(0xFF10B981)),
+                  const SizedBox(width: 6),
+                  Text('实时在线 ${d.online}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  const Spacer(),
+                  Text('每分钟刷新', style: TextStyle(fontSize: 11.5, color: theme.colorScheme.onSurfaceVariant)),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      SizedBox(
+                        height: 180,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            for (final p in d.points)
+                              Expanded(
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 1),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.end,
+                                    children: [
+                                      Container(
+                                        height: (p.uploads / maxV) * 140 + (p.uploads > 0 ? 3 : 0),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF6366F1),
+                                          borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Container(
+                                        height: (p.logins / maxV) * 30 + (p.logins > 0 ? 2 : 0),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF34D399),
+                                          borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(d.points.isEmpty ? '' : d.points.first.label, style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
+                          Text(d.points.isEmpty ? '' : d.points[d.points.length ~/ 2].label, style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
+                          Text(d.points.isEmpty ? '' : d.points.last.label, style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  _legend(const Color(0xFF6366F1), '上传数'),
+                  const SizedBox(width: 16),
+                  _legend(const Color(0xFF34D399), '登录数'),
+                ],
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _legend(Color c, String label) {
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Container(width: 10, height: 10, decoration: BoxDecoration(color: c, borderRadius: BorderRadius.circular(3))),
+      const SizedBox(width: 5),
+      Text(label, style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
+    ]);
+  }
+}
+
+// ---------- 实时日志（二级页） ----------
+class _LogsTab extends ConsumerStatefulWidget {
+  const _LogsTab();
+
+  @override
+  ConsumerState<_LogsTab> createState() => _LogsTabState();
+}
+
+class _LogsTabState extends ConsumerState<_LogsTab> {
+  Timer? _timer;
+  bool _paused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (mounted && !_paused) ref.invalidate(adminLogsProvider);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  static const _labels = <String, (String, Color, Color)>{
+    'login': ('登录', Color(0xFFECFDF5), Color(0xFF059669)),
+    'upload': ('上传', Color(0xFFEFF6FF), Color(0xFF2563EB)),
+    'delete': ('删除', Color(0xFFFEF2F2), Color(0xFFDC2626)),
+    'move': ('移动', Color(0xFFFFFBEB), Color(0xFFD97706)),
+    'copy': ('复制', Color(0xFFF5F3FF), Color(0xFF7C3AED)),
+    'password_change': ('改密', Color(0xFFF3F4F6), Color(0xFF4B5563)),
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final logs = ref.watch(adminLogsProvider);
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          child: Row(
+            children: [
+              Icon(Icons.circle, size: 8, color: _paused ? const Color(0xFF9CA3AF) : const Color(0xFF10B981)),
+              const SizedBox(width: 6),
+              Text(_paused ? '已暂停' : '实时刷新中', style: const TextStyle(fontSize: 12)),
+              const Spacer(),
+              TextButton(
+                onPressed: () => setState(() => _paused = !_paused),
+                child: Text(_paused ? '继续' : '暂停'),
+              ),
+              IconButton(
+                icon: const Icon(Icons.refresh, size: 20),
+                onPressed: () => ref.invalidate(adminLogsProvider),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: logs.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, _) => Center(child: Text('加载失败: $e')),
+            data: (list) => list.isEmpty
+                ? const Center(child: Text('暂无日志', style: TextStyle(color: Color(0xFF6B7280))))
+                : ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+                    itemCount: list.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 6),
+                    itemBuilder: (_, i) {
+                      final l = list[i];
+                      final meta = _labels[l.action] ?? (l.action, const Color(0xFFF3F4F6), const Color(0xFF4B5563));
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.surface,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Theme.of(context).dividerColor),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(color: meta.$2, borderRadius: BorderRadius.circular(20)),
+                              child: Text(meta.$1,
+                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: meta.$3)),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(l.username, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(l.detail,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              () {
+                                final dt = DateTime.fromMillisecondsSinceEpoch(l.createdAt);
+                                String two(int v) => v.toString().padLeft(2, '0');
+                                return '${two(dt.hour)}:${two(dt.minute)}';
+                              }(),
+                              style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
 }

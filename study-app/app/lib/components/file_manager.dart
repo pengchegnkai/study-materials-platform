@@ -726,10 +726,9 @@ class _FileManagerState extends ConsumerState<FileManager> {
       );
     }
 
-    return ListView.separated(
+    return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: _sortedFiles.length,
-      separatorBuilder: (_, __) => Divider(height: 1, indent: 56, endIndent: 16, color: Theme.of(context).dividerColor),
       itemBuilder: (_, i) => _FileListTile(_sortedFiles[i]),
     );
   }
@@ -775,13 +774,24 @@ class _FileManagerState extends ConsumerState<FileManager> {
 
   Widget _FileListTile(AdminFile file) {
     final selected = _selectedKeys.contains(file.key);
-    return InkWell(
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: selected ? cs.primaryContainer.withOpacity(0.25) : cs.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: selected ? cs.primary : Theme.of(context).dividerColor,
+          width: selected ? 1.4 : 1,
+        ),
+      ),
+      child: InkWell(
+      borderRadius: BorderRadius.circular(12),
       onTap: () => _openPreview(file),
       onLongPress: () => _showContextMenu(context, file, Offset.zero), // 实际位置需用 GestureDetector
       child: Container(
-        height: 48,
-        color: selected ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3) : null,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        height: 56,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Row(
           children: [
             if (widget.canManage) ...[
@@ -801,7 +811,7 @@ class _FileManagerState extends ConsumerState<FileManager> {
               ),
             ),
             _VisibilityBadge(file.visibility),
-            const SizedBox(width: 8),
+            const SizedBox(width: 4),
             PopupMenuButton<String>(
               onSelected: (v) {
                 switch (v) {
@@ -821,6 +831,7 @@ class _FileManagerState extends ConsumerState<FileManager> {
             ),
           ],
         ),
+      ),
       ),
     );
   }

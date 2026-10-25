@@ -45,7 +45,7 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
     setState(() => _loadingFiles = true);
     try {
       final all = await _svc.manifest();
-      final folders = await _svc.folders().catchError((_) => <String>[]);
+      final folders = await _svc.folders(mine: true).catchError((_) => <String>[]);
       final subjects = await _svc.subjects(mine: true).catchError((_) => <Subject>[]);
       if (!mounted) return;
       setState(() {

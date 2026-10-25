@@ -3,6 +3,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class AppConfig {
   static const _key = 'server_base_url';
+  /// 默认服务器（公网域名）：首次安装直连，无需手动配置
+  static const defaultBaseUrl = 'https://study.pck-server.ccwu.cc';
   static const _proxyKey = 'proxy_addr';
   static String _baseUrl = '';
   static String _proxy = '';
@@ -19,9 +21,13 @@ class AppConfig {
   static Future<void> load() async {
     if (_loaded) return;
     final prefs = await SharedPreferences.getInstance();
-    _baseUrl = prefs.getString(_key) ?? '';
+    _baseUrl = prefs.getString(_key) ?? defaultBaseUrl;
     _proxy = prefs.getString(_proxyKey) ?? '';
     _loaded = true;
+    if (prefs.getString(_key) == null) {
+      // 首次启动把默认值落盘，后续设置页可覆盖
+      await prefs.setString(_key, _baseUrl);
+    }
   }
 
   static Future<void> setProxy(String addr) async {

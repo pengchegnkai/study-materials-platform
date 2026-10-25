@@ -55,6 +55,36 @@ final adminRolesProvider = FutureProvider<List<({String id, String name})>>((ref
   ];
 });
 
+/// 24 小时曲线（在线/上传/登录/活跃）
+final adminChart24hProvider = FutureProvider<({int online, List<({String label, int uploads, int logins, int activeUsers})> points})>((ref) async {
+  final dio = ApiClient().dio;
+  final resp = await dio.get('/admin/chart24h');
+  final online = resp.data['online'] as int? ?? 0;
+  final points = (resp.data['points'] as List? ?? [])
+      .map((e) => (
+            label: '${e['label']}',
+            uploads: e['uploads'] as int? ?? 0,
+            logins: e['logins'] as int? ?? 0,
+            activeUsers: e['activeUsers'] as int? ?? 0,
+          ))
+      .toList();
+  return (online: online, points: points);
+});
+
+/// 实时日志
+final adminLogsProvider = FutureProvider<List<({String username, String action, String detail, int createdAt})>>((ref) async {
+  final dio = ApiClient().dio;
+  final resp = await dio.get('/admin/logs', queryParameters: {'limit': 100});
+  return (resp.data['logs'] as List? ?? [])
+      .map((e) => (
+            username: '${e['username'] ?? ''}',
+            action: '${e['action'] ?? ''}',
+            detail: '${e['detail'] ?? ''}',
+            createdAt: e['createdAt'] as int? ?? 0,
+          ))
+      .toList();
+});
+
 /// 全部虚拟文件夹（文件管理导航用）
 final adminFoldersProvider = FutureProvider<List<String>>((ref) async {
   return PlatformService().folders();

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../core/api_client.dart';
 import '../core/config.dart';
 import '../providers/auth_provider.dart';
+import '../core/api_client.dart';
 import '../services/server_discovery_service.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
@@ -16,6 +17,7 @@ class LoginPage extends ConsumerStatefulWidget {
 
 class _LoginPageState extends ConsumerState<LoginPage> {
   final _u = TextEditingController();
+  bool _prefilled = false;
   final _p = TextEditingController();
   bool _loading = false;
   String? _error;
@@ -58,8 +60,18 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     }
   }
 
+  Future<void> _prefill() async {
+    if (_prefilled) return;
+    _prefilled = true;
+    final cached = await ApiClient().cachedSession();
+    if (mounted && _u.text.isEmpty && (cached.username ?? '').isNotEmpty) {
+      _u.text = cached.username!;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    _prefill();
     return Scaffold(
       appBar: AppBar(
         title: const Text(''),

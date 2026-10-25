@@ -14,6 +14,7 @@ import {
   Presentation,
   HardDrive,
   Activity,
+  ScrollText,
   FolderPlus,
   Folder,
   ChevronRight,
@@ -31,7 +32,7 @@ import { Modal } from '../components/Modal';
 import { EmptyState } from '../components/EmptyState';
 import { ListSkeleton } from '../components/Skeleton';
 
-type Tab = 'dashboard' | 'files' | 'users' | 'subjects';
+type Tab = 'dashboard' | 'chart' | 'logs' | 'files' | 'users' | 'subjects';
 
 interface DashboardData {
   online: number;
@@ -111,6 +112,8 @@ export default function AdminPage() {
 
   const tabs: { key: Tab; label: string; icon: typeof Users }[] = [
     { key: 'dashboard', label: '数据看板', icon: BarChart2 },
+    { key: 'chart', label: '24 小时曲线', icon: Activity },
+    { key: 'logs', label: '实时日志', icon: ScrollText },
     { key: 'files', label: '文件管理', icon: FileText },
     { key: 'users', label: '用户管理', icon: Users },
     { key: 'subjects', label: '科目管理', icon: FolderTree },
@@ -144,7 +147,9 @@ export default function AdminPage() {
       </aside>
 
       <div className="flex-1 min-w-0 px-4 lg:px-0 pb-8">
-        {tab === 'dashboard' && <DashboardTab dashboard={dashboard} onRefresh={loadDashboard} />}
+        {tab === 'dashboard' && <DashboardTab dashboard={dashboard} onRefresh={loadDashboard} onOpenChart={() => setTab('chart')} onOpenLogs={() => setTab('logs')} />}
+        {tab === 'chart' && <ChartTab />}
+        {tab === 'logs' && <LogsTab />}
         {tab === 'files' && <FilesTab />}
         {tab === 'users' && <UsersTab />}
         {tab === 'subjects' && <SubjectsTab />}
@@ -179,7 +184,17 @@ function StatCard({ icon: Icon, label, value, subLabel, iconBg, iconColor }: {
 }
 
 // ---------- 数据看板 ----------
-function DashboardTab({ dashboard, onRefresh }: { dashboard: DashboardData | null; onRefresh: () => void }) {
+function DashboardTab({
+  dashboard,
+  onRefresh,
+  onOpenChart,
+  onOpenLogs,
+}: {
+  dashboard: DashboardData | null;
+  onRefresh: () => void;
+  onOpenChart: () => void;
+  onOpenLogs: () => void;
+}) {
   // 每 30 秒自动刷新（在线人数等实时数据）
   useEffect(() => {
     const t = setInterval(onRefresh, 30000);
@@ -209,6 +224,24 @@ function DashboardTab({ dashboard, onRefresh }: { dashboard: DashboardData | nul
         </div>
       ) : (
         <div className="flex flex-col gap-6">
+          {/* 二级菜单快捷入口 */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={onOpenChart}
+              className="h-9 px-4 rounded-full bg-white dark:bg-gray-900 border border-line dark:border-gray-700 text-[13px] font-medium text-ink dark:text-gray-200 hover:border-primary dark:hover:border-indigo-500 transition-all duration-150 cursor-pointer inline-flex items-center gap-1.5"
+            >
+              <Activity size={15} className="text-indigo-500" />
+              24 小时曲线
+            </button>
+            <button
+              onClick={onOpenLogs}
+              className="h-9 px-4 rounded-full bg-white dark:bg-gray-900 border border-line dark:border-gray-700 text-[13px] font-medium text-ink dark:text-gray-200 hover:border-primary dark:hover:border-indigo-500 transition-all duration-150 cursor-pointer inline-flex items-center gap-1.5"
+            >
+              <ScrollText size={15} className="text-emerald-500" />
+              实时日志
+            </button>
+          </div>
+
           {/* 统计卡片 */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <StatCard
@@ -1222,6 +1255,169 @@ function SubjectsTab() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+
+// ---------- 24 小时曲线（二级菜单） ----------
+interface ChartPoint {
+  label: string;
+  uploads: number;
+  logins: number;
+  activeUsers: number;
+}
+
+function ChartTab() {
+  const [data, setData] = useState<{ online: number; points: ChartPoint[] } | null>(null);
+  const [error, setError] = useState('');
+
+  const load = useCallback(async () => {
+    try {
+      const d = await apiGet<{ online: number; points: ChartPoint[] }>('/api/admin/chart24h');
+      setData(d);
+      setError('');
+    } catch (e: any) {
+      setError(e.message || '加载失败');
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 60000); // 每分钟刷新
+    return () => clearInterval(t);
+  }, [load]);
+
+  const max = Math.max(1, ...(data?.points.map((p) => Math.max(p.uploads, p.logins)) ?? [1]));
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="hidden lg:block text-h2 font-semibold text-ink dark:text-gray-100">24 小时曲线</h1>
+        <div className="flex items-center gap-2 text-[13px] text-ink-secondary dark:text-gray-400">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-500" />实时在线 {data?.online ?? 0}
+          </span>
+          <Button variant="secondary" size="sm" onClick={load}>刷新</Button>
+        </div>
+      </div>
+
+      {error && <p className="text-[13px] text-red-500 mb-3">{error}</p>}
+
+      <div className="bg-white dark:bg-gray-900 border border-line dark:border-gray-800 rounded-card p-5">
+        {!data ? (
+          <ListSkeleton count={2} />
+        ) : (
+          <>
+            <div className="flex items-end gap-1 h-[220px]">
+              {data.points.map((p, i) => (
+                <div key={i} className="flex-1 flex flex-col items-center justify-end gap-0.5 group relative">
+                  <div className="absolute -top-8 hidden group-hover:block whitespace-nowrap rounded bg-gray-900 text-white text-[11px] px-2 py-1 z-10">
+                    {p.label} 上传{p.uploads} · 登录{p.logins} · 活跃{p.activeUsers}
+                  </div>
+                  <div
+                    className="w-full rounded-t bg-indigo-500/80 hover:bg-indigo-500 transition-all duration-150"
+                    style={{ height: `${(p.uploads / max) * 170}px`, minHeight: p.uploads > 0 ? 3 : 0 }}
+                  />
+                  <div
+                    className="w-full rounded-t bg-emerald-400/70"
+                    style={{ height: `${(p.logins / max) * 40}px`, minHeight: p.logins > 0 ? 2 : 0 }}
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="mt-2 flex justify-between text-[11px] text-ink-muted dark:text-gray-500">
+              <span>{data.points[0]?.label}</span>
+              <span>{data.points[Math.floor(data.points.length / 2)]?.label}</span>
+              <span>{data.points[data.points.length - 1]?.label}</span>
+            </div>
+            <div className="mt-4 flex items-center gap-5 text-[12px] text-ink-secondary dark:text-gray-400">
+              <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded bg-indigo-500" />上传数</span>
+              <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded bg-emerald-400" />登录数</span>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------- 实时日志（二级菜单） ----------
+interface LogItem {
+  id: string;
+  username: string;
+  action: string;
+  detail: string;
+  createdAt: number;
+}
+
+const ACTION_LABEL: Record<string, { label: string; cls: string }> = {
+  login: { label: '登录', cls: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400' },
+  upload: { label: '上传', cls: 'bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-400' },
+  delete: { label: '删除', cls: 'bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-400' },
+  move: { label: '移动', cls: 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-400' },
+  copy: { label: '复制', cls: 'bg-violet-50 text-violet-700 dark:bg-violet-950 dark:text-violet-400' },
+  password_change: { label: '改密', cls: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' },
+};
+
+function LogsTab() {
+  const [logs, setLogs] = useState<LogItem[] | null>(null);
+  const [paused, setPaused] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const d = await apiGet<{ logs: LogItem[] }>('/api/admin/logs?limit=100');
+      setLogs(d.logs);
+    } catch {
+      setLogs([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+    if (paused) return;
+    const t = setInterval(load, 5000); // 实时刷新
+    return () => clearInterval(t);
+  }, [load, paused]);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="hidden lg:block text-h2 font-semibold text-ink dark:text-gray-100">实时日志</h1>
+        <div className="flex items-center gap-2">
+          <span className={`text-[12px] ${paused ? 'text-ink-muted' : 'text-emerald-600 dark:text-emerald-400'}`}>
+            {paused ? '已暂停' : '● 实时刷新中'}
+          </span>
+          <Button variant="secondary" size="sm" onClick={() => setPaused((v) => !v)}>
+            {paused ? '继续' : '暂停'}
+          </Button>
+          <Button variant="secondary" size="sm" onClick={load}>刷新</Button>
+        </div>
+      </div>
+
+      <div className="bg-white dark:bg-gray-900 border border-line dark:border-gray-800 rounded-card overflow-hidden">
+        {!logs ? (
+          <div className="p-5"><ListSkeleton count={6} /></div>
+        ) : logs.length === 0 ? (
+          <EmptyState icon={ScrollText} title="暂无日志" />
+        ) : (
+          <ul className="divide-y divide-line dark:divide-gray-800">
+            {logs.map((l) => {
+              const a = ACTION_LABEL[l.action] ?? { label: l.action, cls: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' };
+              return (
+                <li key={l.id} className="flex items-center gap-3 px-4 py-3">
+                  <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${a.cls}`}>{a.label}</span>
+                  <span className="shrink-0 text-[13px] font-medium text-ink dark:text-gray-200">{l.username}</span>
+                  <span className="min-w-0 flex-1 truncate text-[13px] text-ink-secondary dark:text-gray-400">{l.detail}</span>
+                  <span className="shrink-0 text-[11.5px] text-ink-muted dark:text-gray-600 tabular-nums">
+                    {formatTime(l.createdAt)}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }
