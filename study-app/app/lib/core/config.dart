@@ -3,8 +3,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class AppConfig {
   static const _key = 'server_base_url';
-  /// 默认服务器（公网域名）：首次安装直连，无需手动配置
-  static const defaultBaseUrl = 'https://study.pck-server.ccwu.cc';
+  /// 默认服务器（公网 API 域名）：首次安装直连，无需手动配置
+  static const defaultBaseUrl = 'http://api.pck-server.ccwu.cc:8080';
+  /// 历史默认值：已安装用户若仍是该地址，启动时自动迁移到新默认
+  static const _legacyDefault = 'https://study.pck-server.ccwu.cc';
   static const _proxyKey = 'proxy_addr';
   static String _baseUrl = '';
   static String _proxy = '';
@@ -21,11 +23,17 @@ class AppConfig {
   static Future<void> load() async {
     if (_loaded) return;
     final prefs = await SharedPreferences.getInstance();
-    _baseUrl = prefs.getString(_key) ?? defaultBaseUrl;
+    final saved = prefs.getString(_key);
+    if (saved == null || saved.isEmpty) {
+      _baseUrl = defaultBaseUrl; // 首次安装：直接用默认公网 API 地址
+    } else if (saved.replaceAll(RegExp(r'/+$'), '') == _legacyDefault) {
+      _baseUrl = defaultBaseUrl; // 旧的 study 域名自动迁移到 api 域名
+    } else {
+      _baseUrl = saved;
+    }
     _proxy = prefs.getString(_proxyKey) ?? '';
     _loaded = true;
-    if (prefs.getString(_key) == null) {
-      // 首次启动把默认值落盘，后续设置页可覆盖
+    if (saved != _baseUrl) {
       await prefs.setString(_key, _baseUrl);
     }
   }
@@ -49,8 +57,7 @@ class AppConfig {
 
   /// 预设地址：局域网直连、公网 API 域名（HTTP 明文端口 8080）、主站公网域名
   static const suggestions = [
-    'http://192.168.3.228:8787',
     'http://api.pck-server.ccwu.cc:8080',
-    'https://study.pck-server.ccwu.cc',
+    'http://192.168.3.228:8787',
   ];
 }
