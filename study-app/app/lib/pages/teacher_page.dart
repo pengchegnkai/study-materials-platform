@@ -1,6 +1,7 @@
 /// pages/teacher_page.dart —— 老师工作台：上传 + 资源管理器风格的文件管理
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -145,6 +146,21 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
     await _uploadFiles(items, subjectId);
   }
 
+  /// 申请存储权限（Android 遍历目录必需）：11+ 全文件访问，否则回退旧存储权限
+  Future<bool> _ensureStoragePermission() async {
+    if (!Platform.isAndroid) return true;
+    if (await Permission.manageExternalStorage.isGranted) return true;
+    if (await Permission.storage.isGranted) return true;
+    // 11+ 先申请「所有文件访问权限」（跳系统设置页），再回退普通存储权限
+    final manage = await Permission.manageExternalStorage.request();
+    if (manage.isGranted) return true;
+    final storage = await Permission.storage.request();
+    if (storage.isGranted) return true;
+    // Android 13+ 媒体权限（部分机型只给媒体权限也能读到对应目录）
+    final photos = await Permission.photos.request();
+    return photos.isGranted;
+  }
+
   /// 选择整个文件夹，递归上传（目录规则：科目名/相对路径，不含所选根文件夹名本身）
   Future<void> _pickFolderAndUpload() async {
     final subjects = await _pickSubject();
@@ -155,20 +171,56 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
     final dirPath = await FilePicker.platform.getDirectoryPath();
     if (dirPath == null || !mounted) return;
 
+    // 1) 权限：没有存储权限时遍历会得到空结果，这里显式申请并给出明确提示
+    final granted = await _ensureStoragePermission();
+    if (!granted) {
+      _toast('没有存储权限，无法读取文件夹。请在系统设置中允许本应用访问所有文件后重试');
+      return;
+    }
+
+    // 2) 遍历：逐个目录容错，遇到不可读目录跳过而不是整体失败
     final root = Directory(dirPath);
     final items = <({File file, String filename, String dir})>[];
-    await for (final entity in root.list(recursive: true, followLinks: false)) {
-      if (entity is! File) continue;
-      if (entity.path.split('/').last.startsWith('.')) continue; // 跳过隐藏文件
-      final rel = entity.path.substring(root.path.length + 1); // 相对所选目录
-      final segs = rel.split('/')..removeLast(); // 去掉文件名 = 相对目录段
-      // 根目录下的文件（segs 为空）也归入科目名目录
-      final dir = [subjectName, ...segs].where((x) => x.isNotEmpty).join('/');
-      items.add((file: entity, filename: entity.path.split('/').last, dir: dir));
+    var hadReadError = false;
+    final stack = <Directory>[root];
+    var visited = 0;
+    while (stack.isNotEmpty && visited < 20000) {
+      final dir = stack.removeLast();
+      List<FileSystemEntity> entries;
+      try {
+        entries = dir.listSync(followLinks: false);
+      } catch (_) {
+        hadReadError = true;
+        continue;
+      }
+      for (final entity in entries) {
+        visited++;
+        if (entity is Directory) {
+          final name = entity.path.split('/').last;
+          if (name.startsWith('.')) continue; // 跳过隐藏目录
+          stack.add(entity);
+          continue;
+        }
+        if (entity is! File) continue;
+        final name = entity.path.split('/').last;
+        if (name.startsWith('.')) continue; // 跳过隐藏文件
+        final rel = entity.path.substring(root.path.length + 1); // 相对所选目录
+        final segs = rel.split('/')..removeLast(); // 去掉文件名 = 相对目录段
+        // 根目录下的文件（segs 为空）也归入科目名目录
+        final dirPath2 = [subjectName, ...segs].where((x) => x.isNotEmpty).join('/');
+        items.add((file: entity, filename: name, dir: dirPath2));
+      }
     }
+
     if (items.isEmpty) {
-      _toast('所选文件夹内没有文件');
+      _toast(hadReadError
+          ? '无法读取该文件夹（权限不足或受系统保护），请在系统设置中开启「所有文件访问权限」后重试'
+          : '所选文件夹内没有文件，请确认选中的是包含文件的目录');
       return;
+    }
+    if (!mounted) return;
+    if (hadReadError) {
+      _toast('部分子目录无权限已跳过，共找到 ${items.length} 个文件');
     }
     await _uploadFiles(items, subjectId);
   }

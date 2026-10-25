@@ -1,6 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- 网络访问：连接学习资料平台（局域网/公网） -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- 存储：选择并遍历文件夹上传（Android 13+ 用媒体权限，11/12 用全文件访问） -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
     <application
         android:label="班级资料共享"
         android:name="${applicationName}"

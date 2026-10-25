@@ -23,6 +23,8 @@ dependencies:
   flutter_markdown: ^0.6.18
   # 文件选择与分享/下载
   file_picker: ^8.0.0
+  # 存储权限（文件夹上传遍历需要）
+  permission_handler: ^11.3.0
   share_plus: ^7.2.1
   # Office 预览：xlsx 表格解析 + zip 解包（docx/pptx 文本提取）
   spreadsheet_decoder: ^2.3.0
