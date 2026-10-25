@@ -60,7 +60,7 @@ class _AdminPageState extends ConsumerState<AdminPage> with SingleTickerProvider
       ),
       body: TabBarView(
         controller: _tabController,
-        children: const [
+        children: [
           _DashboardTab(onOpenChart: () => _tabController.animateTo(4), onOpenLogs: () => _tabController.animateTo(5)),
           _FilesTab(),
           _UsersTab(),
