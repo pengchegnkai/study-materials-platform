@@ -969,7 +969,16 @@ class _FileIcon extends StatelessWidget {
     } else {
       icon = Icons.insert_drive_file_outlined; color = Colors.grey;
     }
-    return Icon(icon, size: size, color: color);
+    final tile = size * 1.9;
+    return Container(
+      width: tile,
+      height: tile,
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(tile * 0.3),
+      ),
+      child: Icon(icon, size: size * 1.05, color: color),
+    );
   }
 }
 
@@ -980,13 +989,19 @@ class _VisibilityBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final published = visibility == 'published';
+    final fg = published ? const Color(0xFF059669) : const Color(0xFF6B7280);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
       decoration: BoxDecoration(
-        color: published ? Colors.green.withOpacity(0.15) : Colors.orange.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(12),
+        color: published ? const Color(0xFFECFDF5) : const Color(0xFFF3F4F6),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: published ? const Color(0xFFA7F3D0) : const Color(0xFFE5E7EB),
+          width: 0.8,
+        ),
       ),
-      child: Text(published ? '已开放' : '未开放', style: TextStyle(fontSize: 11, color: published ? Colors.green : Colors.orange, fontWeight: FontWeight.w500)),
+      child: Text(published ? '已开放' : '未开放',
+          style: TextStyle(fontSize: 11, color: fg, fontWeight: FontWeight.w600)),
     );
   }
 }

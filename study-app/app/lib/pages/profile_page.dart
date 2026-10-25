@@ -148,9 +148,18 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                       children: [
                         _avatarBytes != null
                             ? CircleAvatar(radius: 40, backgroundImage: MemoryImage(_avatarBytes!))
-                            : CircleAvatar(
-                                radius: 40,
-                                backgroundColor: cs.primary,
+                            : Container(
+                                width: 80,
+                                height: 80,
+                                alignment: Alignment.center,
+                                decoration: const BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                    colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+                                  ),
+                                ),
                                 child: Text(
                                   user.displayName.characters.take(2).toString().toUpperCase(),
                                   style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w600),

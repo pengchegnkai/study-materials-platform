@@ -81,12 +81,47 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  // 品牌头部（对齐网页端：渐变徽标 + 应用名）
+                  Center(
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 52,
+                          height: 52,
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+                            ),
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFF4F46E5).withOpacity(0.35),
+                                blurRadius: 16,
+                                offset: const Offset(0, 6),
+                              ),
+                            ],
+                          ),
+                          child: const Icon(Icons.school_outlined,
+                              size: 26, color: Colors.white),
+                        ),
+                        const SizedBox(height: 12),
+                        const Text('班级资料共享',
+                            style: TextStyle(
+                                fontSize: 19,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: -0.3)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 22),
                   const Text('登录',
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+                      style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 4),
                   const Text('管理员 / 老师 / 学生账号',
                       style: TextStyle(fontSize: 13, color: Color(0xFF6B7280))),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 18),
                   TextField(
                     controller: _u,
                     decoration: const InputDecoration(labelText: '用户名'),

@@ -46,7 +46,7 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
     try {
       final all = await _svc.manifest();
       final folders = await _svc.folders().catchError((_) => <String>[]);
-      final subjects = await _svc.subjects().catchError((_) => <Subject>[]);
+      final subjects = await _svc.subjects(mine: true).catchError((_) => <Subject>[]);
       if (!mounted) return;
       setState(() {
         _myFiles = all.where((f) => f.canManage).toList();
@@ -60,7 +60,7 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
   }
 
   Future<List<Subject>?> _pickSubject() async {
-    final subjects = await _svc.subjects();
+    final subjects = await _svc.subjects(mine: true);
     if (!mounted) return null;
     String? subjectId;
     await showDialog(

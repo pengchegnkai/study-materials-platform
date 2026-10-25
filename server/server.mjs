@@ -477,12 +477,26 @@ app.get('/api/session', async (c) => {
 });
 
 app.get('/api/subjects', async (c) => {
-  if (!(await requireLogin(c))) return;
-  const rows = db.prepare(
-    `SELECT s.id, s.name, s.slug, s.sort_order,
-            (SELECT COUNT(*) FROM files f WHERE f.subject_id = s.id AND f.visibility = 'published') AS published_count
-     FROM subjects s ORDER BY s.sort_order, s.created_at`
-  ).all();
+  const user = await requireLogin(c);
+  if (!user) return;
+  // mine=1：老师工作台只返回其被分配的科目（避免出现「未分配该科目」的上传失败）
+  const mine = c.req.query('mine') === '1';
+  let rows;
+  if (mine && !user.roles.includes('admin')) {
+    rows = db.prepare(
+      `SELECT s.id, s.name, s.slug, s.sort_order,
+              (SELECT COUNT(*) FROM files f WHERE f.subject_id = s.id AND f.visibility = 'published') AS published_count
+       FROM subjects s
+       WHERE s.id IN (SELECT subject_id FROM user_subjects WHERE user_id = ?)
+       ORDER BY s.sort_order, s.created_at`
+    ).all(user.sub);
+  } else {
+    rows = db.prepare(
+      `SELECT s.id, s.name, s.slug, s.sort_order,
+              (SELECT COUNT(*) FROM files f WHERE f.subject_id = s.id AND f.visibility = 'published') AS published_count
+       FROM subjects s ORDER BY s.sort_order, s.created_at`
+    ).all();
+  }
   return c.json({ subjects: rows });
 });
 

@@ -71,9 +71,9 @@ class PlatformService {
 
   // ---------- 科目 ----------
 
-  Future<List<Subject>> subjects() async {
+  Future<List<Subject>> subjects({bool mine = false}) async {
     _ensure();
-    final resp = await _dio.get('/subjects');
+    final resp = await _dio.get('/subjects', queryParameters: {if (mine) 'mine': '1'});
     return (resp.data['subjects'] as List).map((j) => Subject.fromJson(j)).toList();
   }
 

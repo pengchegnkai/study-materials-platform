@@ -21,7 +21,8 @@ class AppTheme {
         elevation: 0,
         margin: EdgeInsets.zero,
         color: cardLight,
-        shadowColor: const Color(0x1A4F46E5),
+        shadowColor: const Color(0x144F46E5),
+        surfaceTintColor: Colors.white,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(radiusCard),
           side: const BorderSide(color: Color(0xFFEDEEF2)),
@@ -39,6 +40,7 @@ class AppTheme {
           fontWeight: FontWeight.w700,
           letterSpacing: -0.2,
         ),
+        shape: Border(bottom: BorderSide(color: Color(0xFFEFEFF3), width: 1)),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
@@ -62,7 +64,8 @@ class AppTheme {
           backgroundColor: seed,
           foregroundColor: Colors.white,
           minimumSize: const Size(64, 40),
-          elevation: 0,
+          elevation: 1.5,
+          shadowColor: const Color(0x4D4F46E5),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radiusBtn)),
           textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
         ),

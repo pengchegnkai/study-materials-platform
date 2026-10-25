@@ -46,7 +46,8 @@ export default function TeacherPage() {
   const mySubjects = useMemo(() => subjects, [subjects]);
 
   const loadSubjects = useCallback(async () => {
-    const d = await apiGet<{ subjects: SubjectItem[] }>('/api/subjects');
+    // mine=1：只返回自己被分配的科目，避免上传时出现「未分配该科目」
+    const d = await apiGet<{ subjects: SubjectItem[] }>('/api/subjects?mine=1');
     setSubjects(d.subjects);
   }, []);
 
