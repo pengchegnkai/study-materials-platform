@@ -79448,7 +79448,7 @@ window.renderFile = async function (kind, base64) {
       if (!window.__pptxReady) throw new Error('渲染引擎未就绪');
       container.innerHTML = '';
       const renderer = new window.__PptxRenderer();
-      await renderer.render(bytes, container);
+      await renderer.preview(bytes, container);
     }
     window.__renderDone = true;
   } catch (e) {
