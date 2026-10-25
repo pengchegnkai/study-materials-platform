@@ -465,7 +465,7 @@ class _FileManagerState extends ConsumerState<FileManager> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.create_new_folder_outlined, size: 15, color: cs.primary),
+                      Icon(Icons.create_new_folder_outlined, size: 15, color: Theme.of(context).colorScheme.primary),
                       if (!narrow) ...[
                         const SizedBox(width: 5),
                         const Text('新建文件夹', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500)),
