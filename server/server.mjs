@@ -338,6 +338,11 @@ async function canView(user, file) {
   if (!(await isActiveUser(user))) return false;
   if (user.roles.includes('admin')) return true;
   if (file.uploader_id === user.sub) return true;
+  // 老师：自己分配科目下的文件可见可管理
+  if (user.roles.includes('teacher') && file.subject_id &&
+      db.prepare('SELECT 1 FROM user_subjects WHERE user_id = ? AND subject_id = ?').get(user.sub, file.subject_id)) {
+    return true;
+  }
 
   const userPerm = db.prepare(
     `SELECT 1 FROM file_permissions WHERE user_id = ? AND can_view = 1 AND (target IS NULL OR target = ? OR target = ?)`
@@ -356,10 +361,22 @@ async function canView(user, file) {
   return roles.includes('student') && file.visibility === 'published';
 }
 
+/// 文件管理权：管理员 > 上传者 > 老师（文件所属科目分配给该老师）
+function canManageFile(user, file) {
+  if (!user || !file) return false;
+  if (user.roles.includes('admin')) return true;
+  if (file.uploader_id === user.sub) return true;
+  if (user.roles.includes('teacher') && file.subject_id) {
+    return !!db.prepare('SELECT 1 FROM user_subjects WHERE user_id = ? AND subject_id = ?')
+      .get(user.sub, file.subject_id);
+  }
+  return false;
+}
+
 function requireOwner(user, key) {
   const file = db.prepare('SELECT * FROM files WHERE key = ?').get(key);
   if (!file) return { error: '文件不存在', status: 404 };
-  if (!user.roles.includes('admin') && file.uploader_id !== user.sub) return { error: '无权限', status: 403 };
+  if (!canManageFile(user, file)) return { error: '无权限', status: 403 };
   return { file };
 }
 
@@ -546,7 +563,7 @@ app.get('/api/manifest', async (c) => {
       uploader: row.uploader_username,
       visibility: row.visibility,
       uploadedAt: row.uploaded_at,
-      canManage: user.roles.includes('admin') || row.uploader_id === user.sub,
+      canManage: canManageFile(user, row),
     });
   }
   return c.json({ files: out });
@@ -1043,12 +1060,10 @@ app.delete('/api/folders', async (c) => {
   const isAdmin = user.roles.includes('admin');
 
   // 找到该文件夹内的文件（按 dirFromKey 归属过滤 + 权限）
-  const rows = db.prepare('SELECT key FROM files').all().filter((r) => {
+  const rows = db.prepare('SELECT key, subject_id, uploader_id FROM files').all().filter((r) => {
     const d = dirFromKey(r.key);
     if (d !== folder && !d.startsWith(folder + '/')) return false;
-    if (isAdmin) return true;
-    const parts = r.key.split('/');
-    return parts[1] !== 'admin' && parts[2] === encodeURIComponent(user.username);
+    return canManageFile(user, r);
   });
   for (const r of rows) {
     const d = dirFromKey(r.key);
@@ -1097,12 +1112,10 @@ app.post('/api/folders/move', async (c) => {
   const base = folder.split('/').pop();
   const newBase = targetDir ? `${targetDir}/${base}` : base;
 
-  const rows = db.prepare('SELECT key FROM files').all().filter((r) => {
+  const rows = db.prepare('SELECT key, subject_id, uploader_id FROM files').all().filter((r) => {
     const d = dirFromKey(r.key);
     if (d !== folder && !d.startsWith(folder + '/')) return false;
-    if (isAdmin) return true;
-    const parts = r.key.split('/');
-    return parts[1] !== 'admin' && parts[2] === encodeURIComponent(user.username);
+    return canManageFile(user, r);
   });
   for (const r of rows) {
     const d = dirFromKey(r.key);
@@ -1159,9 +1172,7 @@ function userPrefixOf(key) {
 async function requireFileOwner(c, user, key) {
   const row = db.prepare('SELECT * FROM files WHERE key = ?').get(key);
   if (!row) return { error: '文件不存在', status: 404 };
-  const isAdmin = user.roles.includes('admin');
-  const owner = row.uploader_id === user.sub || userPrefixOf(key) === `uploads/${encodeURIComponent(user.username)}/`;
-  if (!isAdmin && !owner) return { error: '无权限操作该文件', status: 403 };
+  if (!canManageFile(user, row)) return { error: '无权限操作该文件', status: 403 };
   return { row };
 }
 

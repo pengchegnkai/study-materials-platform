@@ -1309,22 +1309,42 @@ function ChartTab() {
           <ListSkeleton count={2} />
         ) : (
           <>
-            <div className="flex items-end gap-1 h-[220px]">
-              {data.points.map((p, i) => (
-                <div key={i} className="flex-1 flex flex-col items-center justify-end gap-0.5 group relative">
-                  <div className="absolute -top-8 hidden group-hover:block whitespace-nowrap rounded bg-gray-900 text-white text-[11px] px-2 py-1 z-10">
-                    {p.label} 上传{p.uploads} · 登录{p.logins} · 活跃{p.activeUsers}
-                  </div>
-                  <div
-                    className="w-full rounded-t bg-indigo-500/80 hover:bg-indigo-500 transition-all duration-150"
-                    style={{ height: `${(p.uploads / max) * 170}px`, minHeight: p.uploads > 0 ? 3 : 0 }}
-                  />
-                  <div
-                    className="w-full rounded-t bg-emerald-400/70"
-                    style={{ height: `${(p.logins / max) * 40}px`, minHeight: p.logins > 0 ? 2 : 0 }}
-                  />
+            <div className="flex gap-2 h-[220px]">
+              {/* Y 轴刻度 */}
+              <div className="flex flex-col justify-between shrink-0 pb-0 text-right w-8">
+                {[1, 0.75, 0.5, 0.25, 0].map((ratio) => (
+                  <span key={ratio} className="text-[10.5px] text-ink-muted dark:text-gray-500 tabular-nums leading-none">
+                    {Math.round(max * ratio)}
+                  </span>
+                ))}
+              </div>
+              {/* 图表区：网格线 + 柱 */}
+              <div className="relative flex-1">
+                <div className="absolute inset-0 flex flex-col justify-between pointer-events-none">
+                  {[0, 1, 2, 3, 4].map((i) => (
+                    <div key={i} className="border-t border-dashed border-line dark:border-gray-800 w-full" />
+                  ))}
                 </div>
-              ))}
+                <div className="relative flex items-end gap-1 h-full">
+                  {data.points.map((p, i) => (
+                    <div key={i} className="flex-1 flex flex-col items-center justify-end group relative h-full">
+                      <div className="absolute -top-8 hidden group-hover:block whitespace-nowrap rounded bg-gray-900 text-white text-[11px] px-2 py-1 z-10">
+                        {p.label} 上传{p.uploads} · 登录{p.logins} · 活跃{p.activeUsers}
+                      </div>
+                      <div className="flex flex-col items-center justify-end w-full">
+                        <div
+                          className="w-full rounded-t bg-indigo-500/80 hover:bg-indigo-500 transition-all duration-150"
+                          style={{ height: `${(p.uploads / max) * 170}px`, minHeight: p.uploads > 0 ? 3 : 0 }}
+                        />
+                        <div
+                          className="w-full rounded-t bg-emerald-400/70"
+                          style={{ height: `${(p.logins / max) * 30}px`, minHeight: p.logins > 0 ? 2 : 0 }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
             <div className="mt-2 flex justify-between text-[11px] text-ink-muted dark:text-gray-500">
               <span>{data.points[0]?.label}</span>

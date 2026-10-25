@@ -704,34 +704,77 @@ class _ChartTabState extends ConsumerState<_ChartTab> {
                       SizedBox(
                         height: 180,
                         child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            for (final p in d.points)
-                              Expanded(
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 1),
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.end,
+                            // Y 轴刻度
+                            SizedBox(
+                              width: 30,
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  for (final r in [1.0, 0.75, 0.5, 0.25, 0.0])
+                                    Text('${(maxV * r).round()}',
+                                        style: const TextStyle(
+                                            fontSize: 10, color: Color(0xFF9CA3AF))),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            // 图表区：网格线 + 柱
+                            Expanded(
+                              child: Stack(
+                                children: [
+                                  Column(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Container(
-                                        height: (p.uploads / maxV) * 140 + (p.uploads > 0 ? 3 : 0),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFF6366F1),
-                                          borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
+                                      for (var i = 0; i < 5; i++)
+                                        Container(
+                                          height: 1,
+                                          color: const Color(0xFFEFEFF3),
                                         ),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Container(
-                                        height: (p.logins / maxV) * 30 + (p.logins > 0 ? 2 : 0),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFF34D399),
-                                          borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
-                                        ),
-                                      ),
                                     ],
                                   ),
-                                ),
+                                  Row(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      for (final p in d.points)
+                                        Expanded(
+                                          child: Padding(
+                                            padding: const EdgeInsets.symmetric(horizontal: 1),
+                                            child: Column(
+                                              mainAxisAlignment: MainAxisAlignment.end,
+                                              children: [
+                                                Container(
+                                                  height: (p.uploads / maxV) * 140 +
+                                                      (p.uploads > 0 ? 3 : 0),
+                                                  decoration: BoxDecoration(
+                                                    color: const Color(0xFF6366F1),
+                                                    borderRadius:
+                                                        const BorderRadius.vertical(
+                                                            top: Radius.circular(3)),
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 2),
+                                                Container(
+                                                  height: (p.logins / maxV) * 30 +
+                                                      (p.logins > 0 ? 2 : 0),
+                                                  decoration: BoxDecoration(
+                                                    color: const Color(0xFF34D399),
+                                                    borderRadius:
+                                                        const BorderRadius.vertical(
+                                                            top: Radius.circular(3)),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ],
                               ),
+                            ),
                           ],
                         ),
                       ),

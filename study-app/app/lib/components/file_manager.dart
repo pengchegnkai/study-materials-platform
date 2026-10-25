@@ -320,18 +320,28 @@ class _FileManagerState extends ConsumerState<FileManager> {
         }),
         borderRadius: BorderRadius.circular(20),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(
-            color: selected ? cs.primary : cs.surfaceContainerHighest.withOpacity(0.6),
+            color: selected ? cs.primary : Colors.white,
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: selected ? cs.primary : Theme.of(context).dividerColor),
+            border: Border.all(
+                color: selected ? cs.primary : const Color(0xFFE5E7EB)),
+            boxShadow: selected
+                ? [
+                    BoxShadow(
+                      color: cs.primary.withOpacity(0.25),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    )
+                  ]
+                : null,
           ),
           child: Text(
             label,
             style: TextStyle(
               fontSize: 13,
-              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-              color: selected ? cs.onPrimary : cs.onSurfaceVariant,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              color: selected ? cs.onPrimary : const Color(0xFF6B7280),
             ),
           ),
         ),
@@ -381,8 +391,6 @@ class _FileManagerState extends ConsumerState<FileManager> {
   }
 
   Widget _buildToolbar() {
-    final selectedCount = _selectedKeys.length;
-    final allSelected = _selectedKeys.length == _sortedFiles.length && _sortedFiles.isNotEmpty;
     final hasFolderActions = widget.onCreateFolder != null || widget.onUpload != null;
 
     return Container(
@@ -468,50 +476,6 @@ class _FileManagerState extends ConsumerState<FileManager> {
                 ],
                 child: Icon(Icons.add_circle_outline, size: 22, color: cs.colorScheme.primary),
               ),
-            if (selectedCount > 0) ...[
-              if (!narrow)
-                Text('已选 $selectedCount 项',
-                    style: TextStyle(fontSize: 13, color: cs.colorScheme.primary)),
-              const SizedBox(width: 4),
-              if (widget.canManage && widget.onMoveCopy != null) ...[
-                IconButton(
-                  icon: const Icon(Icons.drive_file_move_outline, size: 20),
-                  tooltip: '移动到…',
-                  visualDensity: VisualDensity.compact,
-                  onPressed: () => _moveOrCopySelected('move'),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.copy_all_outlined, size: 20),
-                  tooltip: '复制到…',
-                  visualDensity: VisualDensity.compact,
-                  onPressed: () => _moveOrCopySelected('copy'),
-                ),
-              ],
-              if (widget.canManage)
-                narrow
-                    ? IconButton(
-                        icon: const Icon(Icons.delete_outline, size: 20, color: Colors.red),
-                        tooltip: '删除($selectedCount)',
-                        visualDensity: VisualDensity.compact,
-                        onPressed: () => _batchDelete(),
-                      )
-                    : FilledButton.icon(
-                        icon: const Icon(Icons.delete_outline, size: 16),
-                        label: Text('删除($selectedCount)'),
-                        onPressed: () => _batchDelete(),
-                        style: FilledButton.styleFrom(
-                            backgroundColor: Colors.red, visualDensity: VisualDensity.compact),
-                      ),
-              const SizedBox(width: 4),
-            ],
-            // 全选
-            if (widget.canManage)
-              Checkbox(
-                value: allSelected,
-                tristate: selectedCount > 0 && !allSelected,
-                visualDensity: VisualDensity.compact,
-                onChanged: (_) => _selectAll(),
-              ),
           ],
         );
       }),
@@ -577,6 +541,23 @@ class _FileManagerState extends ConsumerState<FileManager> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e'.replaceFirst('Exception: ', '')), backgroundColor: Colors.red));
         }
+      }
+    }
+  }
+
+  /// 单项移动/复制（网页端操作列同款）
+  Future<void> _moveOrCopyOne(AdminFile file, String action) async {
+    if (widget.onMoveCopy == null) return;
+    final target = await _pickTargetDir();
+    if (target == null) return;
+    try {
+      await widget.onMoveCopy!([file], action, target);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('$e'.replaceFirst('Exception: ', '')),
+          backgroundColor: Colors.red,
+        ));
       }
     }
   }
@@ -794,10 +775,6 @@ class _FileManagerState extends ConsumerState<FileManager> {
         padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Row(
           children: [
-            if (widget.canManage) ...[
-              Checkbox(value: selected, onChanged: (_) => _toggleSelection(file.key)),
-              const SizedBox(width: 8),
-            ],
             _FileIcon(file),
             const SizedBox(width: 12),
             Expanded(
@@ -819,10 +796,16 @@ class _FileManagerState extends ConsumerState<FileManager> {
                   case 'toggle': _toggleVisibility(file); break;
                   case 'delete': _deleteFile(file); break;
                   case 'props': _showProperties(file); break;
+                  case 'move': _moveOrCopyOne(file, 'move'); break;
+                  case 'copy': _moveOrCopyOne(file, 'copy'); break;
                 }
               },
               itemBuilder: (_) => [
                 if (widget.canManage) const PopupMenuItem(value: 'rename', child: Row(children: [Icon(Icons.edit_outlined, size: 18), SizedBox(width: 8), Text('重命名')])),
+                if (widget.canManage && widget.onMoveCopy != null)
+                  const PopupMenuItem(value: 'move', child: Row(children: [Icon(Icons.drive_file_move_outline, size: 18), SizedBox(width: 8), Text('移动')])),
+                if (widget.canManage && widget.onMoveCopy != null)
+                  const PopupMenuItem(value: 'copy', child: Row(children: [Icon(Icons.copy_all_outlined, size: 18), SizedBox(width: 8), Text('复制')])),
                 if (widget.canManage) PopupMenuItem(value: 'toggle', child: Row(children: [Icon(file.visibility == 'published' ? Icons.visibility_off : Icons.visibility, size: 18), SizedBox(width: 8), Text(file.visibility == 'published' ? '取消开放' : '开放')])),
                 const PopupMenuItem(value: 'props', child: Row(children: [Icon(Icons.info_outlined, size: 18), SizedBox(width: 8), Text('属性')])),
                 if (widget.canManage) const PopupMenuItem(value: 'delete', child: Row(children: [Icon(Icons.delete_outline, size: 18, color: Colors.red), SizedBox(width: 8), Text('删除', style: TextStyle(color: Colors.red))])),
