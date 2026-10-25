@@ -90,11 +90,11 @@ export async function renderPreview(
   }
 
   if (kind === 'pdf') {
-    // 浏览器内置 PDF 查看器（同源请求自动带凭证）
+    // 浏览器内置 PDF 查看器（同源请求自动带凭证）；父容器高度由内容撑开，用视口高度避免 iframe 塌缩
+    container.style.display = '';
     const frame = document.createElement('iframe');
     frame.src = `/api/file?key=${encodeURIComponent(fileKey)}`;
-    frame.style.cssText = 'width:100%;height:100%;border:0;display:block;';
-    container.style.display = '';
+    frame.style.cssText = 'width:100%;height:calc(100vh - 190px);min-height:480px;border:0;display:block;';
     container.appendChild(frame);
     return;
   }
