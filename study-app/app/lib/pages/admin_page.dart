@@ -90,10 +90,12 @@ class _DashboardTab extends ConsumerWidget {
         data: (d) => ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            GridView.count(
+            LayoutBuilder(builder: (context, c) {
+              final cols = c.maxWidth >= 900 ? 4 : (c.maxWidth >= 600 ? 3 : 2);
+              return GridView.count(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              crossAxisCount: 2,
+              crossAxisCount: cols,
               mainAxisSpacing: 12,
               crossAxisSpacing: 12,
               childAspectRatio: 1.6,
@@ -103,7 +105,8 @@ class _DashboardTab extends ConsumerWidget {
                 _StatCard('总文件', '${d.totalFiles}', Icons.description_outlined, Colors.orange),
                 _StatCard('存储占用', formatSize(d.totalSize), Icons.storage_outlined, Colors.purple),
               ],
-            ),
+              );
+            }),
             const SizedBox(height: 24),
             Text('最近上传', style: theme.textTheme.titleLarge),
             const SizedBox(height: 12),

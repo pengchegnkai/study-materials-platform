@@ -506,11 +506,11 @@ function FilesTab() {
     <div>
       <h1 className="hidden lg:block text-h2 font-semibold text-ink dark:text-gray-100 mb-6">文件管理</h1>
 
-      {/* 科目切换：一级导航 */}
-      <div className="flex flex-wrap items-center gap-2 mb-3">
+      {/* 科目切换：一级导航（小屏横向滚动） */}
+      <div className="flex items-center gap-2 mb-3 overflow-x-auto pb-1 -mx-1 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <button
           onClick={() => { setSubjectFilter(''); setCurrentDir(''); }}
-          className={`h-9 px-4 rounded-full text-[13px] font-medium transition-all duration-150 cursor-pointer ${
+          className={`shrink-0 h-9 px-4 rounded-full text-[13px] font-medium transition-all duration-150 cursor-pointer ${
             subjectFilter === ''
               ? 'bg-primary text-white shadow-card'
               : 'bg-white dark:bg-gray-900 border border-line dark:border-gray-700 text-ink-secondary dark:text-gray-400 hover:border-primary dark:hover:border-indigo-500'
@@ -522,7 +522,7 @@ function FilesTab() {
           <button
             key={sj.id}
             onClick={() => { setSubjectFilter(sj.id); setCurrentDir(sj.name); }}
-            className={`h-9 px-4 rounded-full text-[13px] font-medium transition-all duration-150 cursor-pointer ${
+            className={`shrink-0 h-9 px-4 rounded-full text-[13px] font-medium transition-all duration-150 cursor-pointer ${
               subjectFilter === sj.id
                 ? 'bg-primary text-white shadow-card'
                 : 'bg-white dark:bg-gray-900 border border-line dark:border-gray-700 text-ink-secondary dark:text-gray-400 hover:border-primary dark:hover:border-indigo-500'

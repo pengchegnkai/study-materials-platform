@@ -37,14 +37,6 @@ class HomePage extends ConsumerWidget {
             onPressed: () => context.push('/profile'),
             icon: const UserAvatar(radius: 14),
           ),
-          IconButton(
-            icon: const Icon(Icons.logout_outlined),
-            tooltip: '退出登录',
-            onPressed: () async {
-              await ref.read(authProvider.notifier).logout();
-              if (context.mounted) context.go('/login');
-            },
-          ),
         ],
       ),
       body: subjects.when(

@@ -392,7 +392,241 @@ class _FileManagerState extends ConsumerState<FileManager> {
         color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.5),
         border: Border(bottom: BorderSide(color: Theme.of(context).dividerColor)),
       ),
-      child: Row(
+      child: LayoutBuilder(builder: (context, c) {
+        final narrow = c.maxWidth < 430;
+        final cs = Theme.of(context);
+        return Row(
+          children: [
+            // 视图模式切换：窄屏只显示图标
+            SegmentedButton<String>(
+              segments: [
+                ButtonSegment(
+                  value: 'list',
+                  icon: const Icon(Icons.view_list, size: 18),
+                  label: narrow ? null : const Text('列表'),
+                ),
+                ButtonSegment(
+                  value: 'grid',
+                  icon: const Icon(Icons.grid_view, size: 18),
+                  label: narrow ? null : const Text('网格'),
+                ),
+              ],
+              selected: {_viewMode},
+              onSelectionChanged: (s) => setState(() => _viewMode = s.first),
+              showSelectedIcon: false,
+            ),
+            const SizedBox(width: 6),
+            // 排序
+            PopupMenuButton<String>(
+              initialValue: _sortBy,
+              onSelected: (v) => setState(() {
+                if (_sortBy == v) {
+                  _sortAsc = !_sortAsc;
+                } else {
+                  _sortBy = v;
+                  _sortAsc = true;
+                }
+              }),
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'name', child: Text('按名称')),
+                PopupMenuItem(value: 'size', child: Text('按大小')),
+                PopupMenuItem(value: 'date', child: Text('按时间')),
+              ],
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.sort, size: 18, color: cs.colorScheme.onSurfaceVariant),
+                  Icon(_sortAsc ? Icons.arrow_upward : Icons.arrow_downward, size: 14),
+                ],
+              ),
+            ),
+            const Spacer(),
+            // 文件夹操作
+            if (hasFolderActions)
+              PopupMenuButton<String>(
+                onSelected: (v) {
+                  if (v == 'newFolder') _showCreateFolderDialog();
+                  if (v == 'upload') widget.onUpload?.call(_currentPath);
+                },
+                itemBuilder: (_) => [
+                  if (widget.onCreateFolder != null)
+                    const PopupMenuItem(
+                        value: 'newFolder',
+                        child: Row(children: [
+                          Icon(Icons.create_new_folder_outlined, size: 18),
+                          SizedBox(width: 8),
+                          Text('新建文件夹')
+                        ])),
+                  if (widget.onUpload != null)
+                    const PopupMenuItem(
+                        value: 'upload',
+                        child: Row(children: [
+                          Icon(Icons.upload_file_outlined, size: 18),
+                          SizedBox(width: 8),
+                          Text('上传到此处')
+                        ])),
+                ],
+                child: Icon(Icons.add_circle_outline, size: 22, color: cs.colorScheme.primary),
+              ),
+            if (selectedCount > 0) ...[
+              if (!narrow)
+                Text('已选 $selectedCount 项',
+                    style: TextStyle(fontSize: 13, color: cs.colorScheme.primary)),
+              const SizedBox(width: 4),
+              if (widget.canManage && widget.onMoveCopy != null) ...[
+                IconButton(
+                  icon: const Icon(Icons.drive_file_move_outline, size: 20),
+                  tooltip: '移动到…',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _moveOrCopySelected('move'),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.copy_all_outlined, size: 20),
+                  tooltip: '复制到…',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _moveOrCopySelected('copy'),
+                ),
+              ],
+              if (widget.canManage)
+                narrow
+                    ? IconButton(
+                        icon: const Icon(Icons.delete_outline, size: 20, color: Colors.red),
+                        tooltip: '删除($selectedCount)',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => _batchDelete(),
+                      )
+                    : FilledButton.icon(
+                        icon: const Icon(Icons.delete_outline, size: 16),
+                        label: Text('删除($selectedCount)'),
+                        onPressed: () => _batchDelete(),
+                        style: FilledButton.styleFrom(
+                            backgroundColor: Colors.red, visualDensity: VisualDensity.compact),
+                      ),
+              const SizedBox(width: 4),
+            ],
+            // 全选
+            if (widget.canManage)
+              Checkbox(
+                value: allSelected,
+                tristate: selectedCount > 0 && !allSelected,
+                visualDensity: VisualDensity.compact,
+                onChanged: (_) => _selectAll(),
+              ),
+          ],
+        );
+      }),
+    );
+  }
+
+  /// 科目 chips 行：清晰的一级维度（全部科目 / 各科目）
+  Widget _buildSubjectChips() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        border: Border(bottom: BorderSide(color: Theme.of(context).dividerColor)),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _subjectChip('', '全部科目', ''),
+            for (final s in widget.subjects) _subjectChip(s.id, s.name, s.name),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _subjectChip(String id, String label, String folderPath) {
+    final selected = _subjectId == id;
+    final cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: InkWell(
+        onTap: () => setState(() {
+          _subjectId = id;
+          _currentPath = folderPath; // 切科目直接进入该科目目录
+          _selectedKeys.clear();
+        }),
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+          decoration: BoxDecoration(
+            color: selected ? cs.primary : cs.surfaceContainerHighest.withOpacity(0.6),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: selected ? cs.primary : Theme.of(context).dividerColor),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+              color: selected ? cs.onPrimary : cs.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 子文件夹行（网格/列表视图共用）
+  Widget _buildFolderRow() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3),
+        border: Border(bottom: BorderSide(color: Theme.of(context).dividerColor)),
+      ),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (final name in _subFolders)
+            GestureDetector(
+              onLongPress: () => _showFolderActions(_currentPath.isEmpty ? name : '$_currentPath/$name'),
+              child: InkWell(
+                onTap: () => setState(() => _currentPath = _currentPath.isEmpty ? name : '$_currentPath/$name'),
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Theme.of(context).dividerColor),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.folder_outlined, size: 16, color: Theme.of(context).colorScheme.primary),
+                      const SizedBox(width: 6),
+                      Text(name, style: const TextStyle(fontSize: 13)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildToolbar() {
+    final selectedCount = _selectedKeys.length;
+    final allSelected = _selectedKeys.length == _sortedFiles.length && _sortedFiles.isNotEmpty;
+    final hasFolderActions = widget.onCreateFolder != null || widget.onUpload != null;
+
+    return Container(
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.5),
+        border: Border(bottom: BorderSide(color: Theme.of(context).dividerColor)),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
         children: [
           // 视图模式切换
           SegmentedButton<String>(
@@ -477,6 +711,7 @@ class _FileManagerState extends ConsumerState<FileManager> {
               onChanged: (_) => _selectAll(),
             ),
         ],
+        ),
       ),
     );
   }

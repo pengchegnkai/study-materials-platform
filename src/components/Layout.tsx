@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiGet } from '../utils/api';
+import { Home as HomeIcon, Upload as UploadIcon, Shield as ShieldIcon, User as UserIcon } from 'lucide-react';
 import { ToastProvider } from './Toast';
 import { Button } from './Button';
 
@@ -57,7 +58,8 @@ export function Layout({ children }: { children: ReactNode }) {
       <ToastProvider>
         <div className="min-h-screen flex flex-col bg-surface dark:bg-[#0B0F14]">
           <AppHeader />
-          <main className="flex-1">{children}</main>
+          <main className="flex-1 pb-[64px] sm:pb-0">{children}</main>
+          <MobileNav />
         </div>
       </ToastProvider>
     </SessionContext.Provider>
@@ -276,5 +278,49 @@ function ChangePasswordModal({ open, onClose }: { open: boolean; onClose: () => 
         )}
       </div>
     </div>
+  );
+}
+
+
+/** 移动端底部导航（<sm 显示），保证小屏也能一键切换主要页面 */
+function MobileNav() {
+  const { session } = useSession();
+  const location = useLocation();
+  const isAdmin = hasRole(session, 'admin');
+  const isTeacher = hasRole(session, 'teacher');
+
+  const items: { to: string; label: string; icon: typeof HomeIcon; show: boolean }[] = [
+    { to: '/', label: '首页', icon: HomeIcon, show: true },
+    { to: '/teacher', label: '工作台', icon: UploadIcon, show: isTeacher || isAdmin },
+    { to: '/admin', label: '管理', icon: ShieldIcon, show: isAdmin },
+    { to: '/profile', label: '我的', icon: UserIcon, show: !!session },
+  ];
+  const visible = items.filter((i) => i.show);
+  if (visible.length === 0) return null;
+
+  return (
+    <nav
+      className="sm:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 dark:bg-[#0B0F14]/95 backdrop-blur-xl border-t border-line dark:border-gray-800"
+      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+    >
+      <div className="flex items-stretch">
+        {visible.map((it) => {
+          const active = it.to === '/' ? location.pathname === '/' : location.pathname.startsWith(it.to);
+          const Icon = it.icon;
+          return (
+            <Link
+              key={it.to}
+              to={it.to}
+              className={`flex-1 h-[56px] flex flex-col items-center justify-center gap-0.5 transition-colors duration-150 ${
+                active ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400 dark:text-gray-500'
+              }`}
+            >
+              <Icon size={20} strokeWidth={active ? 2.2 : 1.8} />
+              <span className={`text-[11px] ${active ? 'font-semibold' : 'font-medium'}`}>{it.label}</span>
+            </Link>
+          );
+        })}
+      </div>
+    </nav>
   );
 }

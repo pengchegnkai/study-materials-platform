@@ -23,7 +23,7 @@ export default function HomePage() {
           <Sparkles size={13} />
           班级共享 · 随时查阅
         </div>
-        <h1 className="text-[30px] leading-tight font-bold tracking-tight text-ink dark:text-gray-100">
+        <h1 className="text-[25px] sm:text-[30px] leading-tight font-bold tracking-tight text-ink dark:text-gray-100">
           学习资料
         </h1>
         <p className="mt-2 text-[14px] text-ink-secondary dark:text-gray-400">

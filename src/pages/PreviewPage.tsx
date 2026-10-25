@@ -50,7 +50,7 @@ export default function PreviewPage() {
   }, [load]);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-56px)]">
+    <div className="flex flex-col h-[calc(100dvh-56px)] pb-[64px] sm:pb-0">
       <div className="max-w-[1200px] w-full mx-auto px-4 md:px-6 py-4 flex items-center gap-3 shrink-0">
         <button
           onClick={() => navigate(-1)}

@@ -229,7 +229,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                   const SizedBox(height: 12),
                   Row(
                     children: [
-                      const Expanded(child: Text('修改后其他设备会下线', style: TextStyle(fontSize: 11.5, color: Color(0xFF9CA3AF)))),
+                      const Expanded(child: Text('修改后其他设备会下线', style: TextStyle(fontSize: 11.5, color: Color(0xFF9CA3AF)), maxLines: 2)),
+                      const SizedBox(width: 8),
                       FilledButton(
                         onPressed: _pwdLoading ? null : _changePassword,
                         child: _pwdLoading

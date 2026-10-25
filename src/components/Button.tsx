@@ -9,9 +9,9 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const sizeCls: Record<NonNullable<ButtonProps['size']>, string> = {
-  sm: 'h-8 px-3 text-[13px]',
-  md: 'h-9 px-4 text-[14px]',
-  lg: 'h-10 px-5 text-[14px]',
+  sm: 'h-9 px-3 text-[13px]',
+  md: 'h-10 px-4 text-[14px]',
+  lg: 'h-11 px-5 text-[15px]',
 };
 
 const variantCls: Record<NonNullable<ButtonProps['variant']>, string> = {

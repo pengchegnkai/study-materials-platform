@@ -246,20 +246,19 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
             child: Card(
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    const Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('上传设置', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-                          SizedBox(height: 4),
-                          Text('上传后按可见性决定学生是否可查看',
-                              style: TextStyle(fontSize: 12, color: Color(0xFF9CA3AF))),
-                        ],
-                      ),
-                    ),
-                    SegmentedButton<String>(
+                child: LayoutBuilder(
+                  builder: (context, c) {
+                    final narrow = c.maxWidth < 560;
+                    final title = const Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('上传设置', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                        SizedBox(height: 4),
+                        Text('上传后按可见性决定学生是否可查看',
+                            style: TextStyle(fontSize: 12, color: Color(0xFF9CA3AF))),
+                      ],
+                    );
+                    final visibility = SegmentedButton<String>(
                       segments: const [
                         ButtonSegment(value: 'private', label: Text('不开放')),
                         ButtonSegment(value: 'published', label: Text('开放')),
@@ -270,9 +269,8 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
                         visualDensity: VisualDensity.compact,
                         textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 12)),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    FilledButton.icon(
+                    );
+                    final uploadBtn = FilledButton.icon(
                       onPressed: _uploading ? null : _pickAndUpload,
                       icon: _uploading
                           ? const SizedBox(
@@ -281,14 +279,46 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
                               child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                           : const Icon(Icons.upload_file_outlined, size: 18),
                       label: Text(_uploading ? '上传中…' : '上传文件'),
-                    ),
-                    const SizedBox(width: 8),
-                    OutlinedButton.icon(
+                    );
+                    final folderBtn = OutlinedButton.icon(
                       onPressed: _uploading ? null : _pickFolderAndUpload,
                       icon: const Icon(Icons.folder_open_outlined, size: 18),
                       label: const Text('上传文件夹'),
-                    ),
-                  ],
+                    );
+                    if (narrow) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          title,
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              visibility,
+                              const Spacer(),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(child: uploadBtn),
+                              const SizedBox(width: 8),
+                              Expanded(child: folderBtn),
+                            ],
+                          ),
+                        ],
+                      );
+                    }
+                    return Row(
+                      children: [
+                        Expanded(child: title),
+                        visibility,
+                        const SizedBox(width: 12),
+                        uploadBtn,
+                        const SizedBox(width: 8),
+                        folderBtn,
+                      ],
+                    );
+                  },
                 ),
               ),
             ),
