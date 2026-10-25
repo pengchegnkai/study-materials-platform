@@ -142,23 +142,26 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
     await _uploadFiles(items, subjectId);
   }
 
-  /// 选择整个文件夹，递归上传（保留目录结构，根文件夹名作为顶层目录）
+  /// 选择整个文件夹，递归上传（目录规则：科目名/相对路径，不含所选根文件夹名本身）
   Future<void> _pickFolderAndUpload() async {
     final subjects = await _pickSubject();
     if (subjects == null || subjects.isEmpty || !mounted) return;
     final subjectId = subjects.first.id;
+    final subjectName = subjects.first.name;
 
     final dirPath = await FilePicker.platform.getDirectoryPath();
     if (dirPath == null || !mounted) return;
 
     final root = Directory(dirPath);
-    final rootName = dirPath.split('/').where((s) => s.isNotEmpty).last;
     final items = <({File file, String filename, String dir})>[];
     await for (final entity in root.list(recursive: true, followLinks: false)) {
       if (entity is! File) continue;
       if (entity.path.split('/').last.startsWith('.')) continue; // 跳过隐藏文件
       final rel = entity.path.substring(root.path.length + 1); // 相对所选目录
-      items.add((file: entity, filename: entity.path.split('/').last, dir: '$rootName/${rel.split('/').take(rel.split('/').length - 1).join('/')}'));
+      final segs = rel.split('/')..removeLast(); // 去掉文件名 = 相对目录段
+      // 根目录下的文件（segs 为空）也归入科目名目录
+      final dir = [subjectName, ...segs].where((x) => x.isNotEmpty).join('/');
+      items.add((file: entity, filename: entity.path.split('/').last, dir: dir));
     }
     if (items.isEmpty) {
       _toast('所选文件夹内没有文件');

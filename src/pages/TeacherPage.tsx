@@ -70,17 +70,18 @@ export default function TeacherPage() {
       toast('请先选择要上传到的科目', 'warning');
       return;
     }
+    const subjectName = subjects.find((s) => s.id === uploadSubject)?.name ?? '';
     setUploading(true);
     let ok = 0;
     let fail = 0;
     let firstError = '';
     for (let i = 0; i < fileList.length; i++) {
       const file = fileList[i];
-      // 相对路径：文件夹上传时保留目录结构（含所选根文件夹名）
+      // 目录规则：手动上传 = 指定目录；文件夹上传 = 「科目名/相对路径」（不含所选根文件夹名本身）
       const rel = (file as any).webkitRelativePath as string | undefined;
-      const subDir =
-        dir ??
-        (rel && rel.includes('/') ? rel.split('/').slice(0, -1).join('/') : '');
+      const relDir =
+        rel && rel.includes('/') ? rel.split('/').slice(1, -1).join('/') : '';
+      const subDir = dir ?? [subjectName, relDir].filter(Boolean).join('/');
       setProgress({ current: i + 1, total: fileList.length, pct: 0 });
       try {
         const form = new FormData();
