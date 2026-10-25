@@ -22,6 +22,10 @@ class FileManager extends ConsumerStatefulWidget {
   final Future<void> Function(String dir)? onUpload;
   /// 移动/复制选中项到目标目录（单选或批量）
   final Future<void> Function(List<AdminFile> items, String action, String targetDir)? onMoveCopy;
+  /// 删除文件夹（其中文件移到上级），null 则隐藏入口
+  final Future<void> Function(String path)? onDeleteFolder;
+  /// 移动文件夹到目标目录，null 则隐藏入口
+  final Future<void> Function(String path, String targetDir)? onMoveFolder;
 
   const FileManager({
     super.key,
@@ -34,6 +38,8 @@ class FileManager extends ConsumerStatefulWidget {
     this.onCreateFolder,
     this.onUpload,
     this.onMoveCopy,
+    this.onDeleteFolder,
+    this.onMoveFolder,
   });
 
   @override
@@ -263,22 +269,25 @@ class _FileManagerState extends ConsumerState<FileManager> {
         runSpacing: 8,
         children: [
           for (final name in _subFolders)
-            InkWell(
-              onTap: () => setState(() => _currentPath = _currentPath.isEmpty ? name : '$_currentPath/$name'),
-              borderRadius: BorderRadius.circular(8),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Theme.of(context).dividerColor),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.folder_outlined, size: 16, color: Theme.of(context).colorScheme.primary),
-                    const SizedBox(width: 6),
-                    Text(name, style: const TextStyle(fontSize: 13)),
-                  ],
+            GestureDetector(
+              onLongPress: () => _showFolderActions(_currentPath.isEmpty ? name : '$_currentPath/$name'),
+              child: InkWell(
+                onTap: () => setState(() => _currentPath = _currentPath.isEmpty ? name : '$_currentPath/$name'),
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Theme.of(context).dividerColor),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.folder_outlined, size: 16, color: Theme.of(context).colorScheme.primary),
+                      const SizedBox(width: 6),
+                      Text(name, style: const TextStyle(fontSize: 13)),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -388,6 +397,69 @@ class _FileManagerState extends ConsumerState<FileManager> {
     );
   }
 
+  /// 文件夹长按操作菜单：移动 / 删除
+  Future<void> _showFolderActions(String folderPath) async {
+    if (widget.onDeleteFolder == null && widget.onMoveFolder == null) return;
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.drive_file_move_outline),
+              title: const Text('移动文件夹'),
+              enabled: widget.onMoveFolder != null,
+              onTap: () => Navigator.pop(ctx, 'move'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.folder_delete_outlined),
+              title: const Text('删除文件夹（文件移到上级）'),
+              enabled: widget.onDeleteFolder != null,
+              onTap: () => Navigator.pop(ctx, 'delete'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (action == null || !mounted) return;
+    if (action == 'delete') {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('删除文件夹'),
+          content: Text('确定删除「${folderPath.split('/').last}」？其中所有文件将移到上级目录，不会丢失。'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: FilledButton.styleFrom(backgroundColor: Colors.red),
+              child: const Text('删除'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true) return;
+      try {
+        await widget.onDeleteFolder!(folderPath);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e'.replaceFirst('Exception: ', '')), backgroundColor: Colors.red));
+        }
+      }
+    } else {
+      final target = await _pickTargetDir(exclude: folderPath);
+      if (target == null) return;
+      try {
+        await widget.onMoveFolder!(folderPath, target);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e'.replaceFirst('Exception: ', '')), backgroundColor: Colors.red));
+        }
+      }
+    }
+  }
+
   /// 选中文件移动/复制到目标目录
   Future<void> _moveOrCopySelected(String action) async {
     if (_selectedKeys.isEmpty || widget.onMoveCopy == null) return;
@@ -407,8 +479,12 @@ class _FileManagerState extends ConsumerState<FileManager> {
     }
   }
 
-  Future<String?> _pickTargetDir() async {
+  Future<String?> _pickTargetDir({String? exclude}) async {
     final ctrl = TextEditingController(text: _currentPath);
+    final options = widget.folders.where((f) {
+      if (exclude == null || exclude.isEmpty) return true;
+      return f != exclude && !f.startsWith('$exclude/');
+    }).toList();
     return showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -417,13 +493,13 @@ class _FileManagerState extends ConsumerState<FileManager> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (widget.folders.isNotEmpty)
+            if (options.isNotEmpty)
               SizedBox(
                 height: 160,
                 child: ListView(
                   children: [
                     ListTile(dense: true, leading: const Icon(Icons.folder_off_outlined, size: 18), title: const Text('（根目录）'), onTap: () { ctrl.text = ''; Navigator.pop(ctx, ''); }),
-                    for (final f in widget.folders)
+                    for (final f in options)
                       ListTile(dense: true, leading: const Icon(Icons.folder_outlined, size: 18), title: Text(f), onTap: () => Navigator.pop(ctx, f)),
                   ],
                 ),

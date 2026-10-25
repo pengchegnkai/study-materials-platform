@@ -18,6 +18,8 @@ import {
   Folder,
   ChevronRight,
   FileSpreadsheet,
+  FolderInput,
+  FolderMinus,
 } from 'lucide-react';
 import { apiDelete, apiGet, apiPatch, apiPost } from '../utils/api';
 import { formatSize, formatTime } from '../utils/format';
@@ -385,8 +387,10 @@ function FilesTab() {
   const [folders, setFolders] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
-  const [dirPick, setDirPick] = useState<{ action: 'move' | 'copy'; f: AdminFile } | null>(null);
+  const [dirPick, setDirPick] = useState<{ action: 'move' | 'copy' | 'moveFolder'; f: AdminFile } | null>(null);
   const [dirPickTarget, setDirPickTarget] = useState('');
+  const [folderPick, setFolderPick] = useState<{ action: 'delete' | 'move'; path: string } | null>(null);
+  const [folderPickTarget, setFolderPickTarget] = useState('');
 
   const load = useCallback(async () => {
     setFiles(null);
@@ -438,6 +442,24 @@ function FilesTab() {
       await apiPost(`/api/${dirPick.action}`, body);
       toast(dirPick.action === 'move' ? '已移动' : '已复制', 'success');
       setDirPick(null);
+      load();
+    } catch (err: any) {
+      toast(err.message || '操作失败', 'error');
+    }
+  };
+
+  const runFolderAction = async () => {
+    if (!folderPick) return;
+    try {
+      if (folderPick.action === 'delete') {
+        await apiDelete(`/api/folders?path=${encodeURIComponent(folderPick.path)}`);
+        toast('文件夹已删除（其中文件已移到上级目录）', 'success');
+      } else {
+        await apiPost('/api/folders/move', { folder: folderPick.path, targetDir: folderPickTarget.trim() });
+        toast('文件夹已移动', 'success');
+      }
+      setFolderPick(null);
+      setCurrentDir((cur) => (folderPick.action === 'delete' || folderPick.action === 'move') && (cur === folderPick.path || cur.startsWith(folderPick.path + '/')) ? '' : cur);
       load();
     } catch (err: any) {
       toast(err.message || '操作失败', 'error');
@@ -517,16 +539,36 @@ function FilesTab() {
           {/* 子文件夹行 */}
           {subFolders.length > 0 && (
             <div className="flex flex-wrap gap-2 p-3 border-b border-line dark:border-gray-800">
-              {subFolders.map((name) => (
-                <button
-                  key={name}
-                  onClick={() => setCurrentDir(currentDir ? `${currentDir}/${name}` : name)}
-                  className="flex items-center gap-1.5 h-9 px-3 rounded-btn border border-line dark:border-gray-700 text-[13px] text-ink dark:text-gray-200 hover:border-primary dark:hover:border-indigo-500 transition-all duration-150 cursor-pointer"
-                >
-                  <Folder size={15} className="text-primary dark:text-indigo-400" />
-                  {name}
-                </button>
-              ))}
+              {subFolders.map((name) => {
+                const fullPath = currentDir ? `${currentDir}/${name}` : name;
+                return (
+                  <div
+                    key={name}
+                    className="group flex items-center h-9 pl-3 pr-1 rounded-btn border border-line dark:border-gray-700 text-[13px] text-ink dark:text-gray-200 hover:border-primary dark:hover:border-indigo-500 transition-all duration-150"
+                  >
+                    <button onClick={() => setCurrentDir(fullPath)} className="flex items-center gap-1.5 cursor-pointer">
+                      <Folder size={15} className="text-primary dark:text-indigo-400" />
+                      {name}
+                    </button>
+                    <span className="hidden group-hover:flex items-center ml-1">
+                      <button
+                        title="移动"
+                        onClick={() => { setFolderPick({ action: 'move', path: fullPath }); setFolderPickTarget(''); }}
+                        className="h-7 w-7 flex items-center justify-center rounded text-ink-muted dark:text-gray-500 hover:text-primary dark:hover:text-indigo-400 transition-all duration-150 cursor-pointer"
+                      >
+                        <FolderInput size={13} />
+                      </button>
+                      <button
+                        title="删除（文件移到上级）"
+                        onClick={() => setFolderPick({ action: 'delete', path: fullPath })}
+                        className="h-7 w-7 flex items-center justify-center rounded text-ink-muted dark:text-gray-500 hover:text-red-500 transition-all duration-150 cursor-pointer"
+                      >
+                        <FolderMinus size={13} />
+                      </button>
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           )}
           <div className="hidden md:block">
@@ -628,6 +670,46 @@ function FilesTab() {
           <Button variant="secondary" onClick={() => setDirPick(null)}>取消</Button>
           <Button onClick={runMoveCopy}>{dirPick?.action === 'move' ? '移动' : '复制'}</Button>
         </div>
+      </Modal>
+
+      {/* 文件夹删除/移动确认 */}
+      <Modal open={!!folderPick} title={folderPick?.action === 'delete' ? '删除文件夹' : '移动文件夹'} onClose={() => setFolderPick(null)}>
+        {folderPick?.action === 'delete' ? (
+          <>
+            <p className="text-[13px] text-ink-secondary dark:text-gray-400">
+              确定删除文件夹「{folderPick.path}」？其中所有文件将移到上级目录（{folderPick.path.includes('/') ? folderPick.path.slice(0, folderPick.path.lastIndexOf('/')) || '根目录' : '根目录'}），不会丢失。
+            </p>
+            <div className="mt-6 flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setFolderPick(null)}>取消</Button>
+              <Button variant="danger" onClick={runFolderAction}>删除文件夹</Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-[13px] text-ink-secondary dark:text-gray-400 mb-3">移动文件夹：{folderPick?.path}</p>
+            <label className="block text-[12px] text-ink-secondary dark:text-gray-400 mb-1.5">目标目录（留空为根目录）</label>
+            <select
+              value={folderPickTarget}
+              onChange={(e) => setFolderPickTarget(e.target.value)}
+              className="w-full h-10 px-3 rounded-btn border border-line dark:border-gray-700 bg-white dark:bg-gray-900 text-[14px] mb-2"
+            >
+              <option value="">（根目录）</option>
+              {folders.filter((f) => f !== folderPick?.path && !f.startsWith((folderPick?.path ?? '') + '/')).map((f) => (
+                <option key={f} value={f}>{f}</option>
+              ))}
+            </select>
+            <input
+              value={folderPickTarget}
+              onChange={(e) => setFolderPickTarget(e.target.value)}
+              placeholder="或手动输入路径"
+              className="w-full h-10 px-3 rounded-btn border border-line dark:border-gray-700 bg-white dark:bg-gray-900 text-[13px]"
+            />
+            <div className="mt-6 flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setFolderPick(null)}>取消</Button>
+              <Button onClick={runFolderAction}>移动</Button>
+            </div>
+          </>
+        )}
       </Modal>
     </div>
   );

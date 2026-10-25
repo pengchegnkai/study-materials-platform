@@ -125,6 +125,18 @@ class AdminNotifier {
     ref.invalidate(adminFoldersProvider);
   }
 
+  Future<void> deleteFolder(String path) async {
+    await PlatformService().deleteFolder(path);
+    ref.invalidate(adminFoldersProvider);
+    ref.invalidate(adminFilesProvider);
+  }
+
+  Future<void> moveFolder(String path, String targetDir) async {
+    await PlatformService().moveFolder(path, targetDir);
+    ref.invalidate(adminFoldersProvider);
+    ref.invalidate(adminFilesProvider);
+  }
+
   // ---------- 科目 ----------
   Future<void> createSubject(String name, int sortOrder) async {
     await _dio.post('/admin/subjects', data: {'name': name, 'sortOrder': sortOrder});

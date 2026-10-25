@@ -365,6 +365,22 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
                       _loadFiles();
                       _toast(fail == 0 ? '已${action == 'move' ? '移动' : '复制'} $ok 项' : '成功 $ok 项，失败 $fail 项：$firstError');
                     },
+                    onDeleteFolder: (path) async {
+                      try {
+                        await _svc.deleteFolder(path);
+                        _loadFiles();
+                      } catch (e) {
+                        _toast('删除失败：$e'.replaceFirst('Exception: ', ''));
+                      }
+                    },
+                    onMoveFolder: (path, targetDir) async {
+                      try {
+                        await _svc.moveFolder(path, targetDir);
+                        _loadFiles();
+                      } catch (e) {
+                        _toast('移动失败：$e'.replaceFirst('Exception: ', ''));
+                      }
+                    },
                     canManage: true,
                   ),
           ),

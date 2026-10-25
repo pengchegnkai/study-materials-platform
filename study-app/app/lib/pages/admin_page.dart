@@ -276,6 +276,8 @@ class _FilesTab extends ConsumerWidget {
               }
             }
           },
+          onDeleteFolder: (path) => ref.read(adminProvider).deleteFolder(path),
+          onMoveFolder: (path, targetDir) => ref.read(adminProvider).moveFolder(path, targetDir),
           canManage: true,
         ),
       ),

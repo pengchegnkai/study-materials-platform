@@ -880,6 +880,104 @@ app.post('/api/folders', async (c) => {
   return c.json({ ok: true, path });
 });
 
+// 文件夹：删除（删除 folder 记录及其子 folder 记录；里面的文件移到上级目录/根目录，不丢数据）
+app.delete('/api/folders', async (c) => {
+  const user = await requireActive(c);
+  if (!user) return;
+  if (!user.roles.includes('admin') && !user.roles.includes('teacher')) return c.json({ error: '无权限' }, 403);
+  const rawPath = c.req.query('path');
+  if (!rawPath) return c.json({ error: '缺少 path' }, 400);
+  const folder = rawPath.split('/').map((s) => sanitizeFilename(s.trim())).filter(Boolean).join('/');
+  if (!folder) return c.json({ error: '非法路径' }, 400);
+  const isAdmin = user.roles.includes('admin');
+
+  // 找到该文件夹内的文件（按 dirFromKey 归属过滤 + 权限）
+  const rows = db.prepare('SELECT key FROM files').all().filter((r) => {
+    const d = dirFromKey(r.key);
+    if (d !== folder && !d.startsWith(folder + '/')) return false;
+    if (isAdmin) return true;
+    const parts = r.key.split('/');
+    return parts[1] !== 'admin' && parts[2] === encodeURIComponent(user.username);
+  });
+  for (const r of rows) {
+    const d = dirFromKey(r.key);
+    // 目标目录 = 父目录（folder 的上级），根文件夹的文件移到根
+    const parent = folder.includes('/') ? folder.slice(0, folder.lastIndexOf('/')) : '';
+    const relInFolder = d === folder ? '' : d.slice(folder.length + 1);
+    const newDir = [parent, relInFolder].filter(Boolean).join('/');
+    const newKey = rekey(r.key, cleanDir(newDir));
+    if (newKey === r.key) continue;
+    const oldFull = filePathOf(r.key);
+    const newFull = filePathOf(newKey);
+    if (!oldFull || !newFull || !existsSync(oldFull)) continue;
+    // 目标重名则加后缀，不覆盖
+    let finalKey = newKey;
+    let n = 1;
+    const filename = r.key.split('/').pop() ?? '';
+    const dot = filename.lastIndexOf('.');
+    const stem = dot > 0 ? filename.slice(0, dot) : filename;
+    const extPart = dot > 0 ? filename.slice(dot) : '';
+    while (db.prepare('SELECT 1 FROM files WHERE key = ?').get(finalKey)) {
+      finalKey = rekey(r.key, [...cleanDir(newDir), `${stem} (${n})${extPart}`]);
+      n++;
+    }
+    mkdirSync(path.dirname(newFull), { recursive: true });
+    try { renameSync(oldFull, filePathOf(finalKey)); } catch { continue; }
+    db.prepare('UPDATE files SET key = ? WHERE key = ?').run(finalKey, r.key);
+  }
+  // 删除 folder 及其子 folder 的 folders 记录
+  db.prepare("DELETE FROM folders WHERE path = ? OR path LIKE ?").run(folder, `${folder}/%`);
+  return c.json({ ok: true, moved: rows.length });
+});
+
+// 文件夹：移动（folder 连同内容放到 targetDir 下）
+app.post('/api/folders/move', async (c) => {
+  const user = await requireActive(c);
+  if (!user) return;
+  if (!user.roles.includes('admin') && !user.roles.includes('teacher')) return c.json({ error: '无权限' }, 403);
+  const body = await c.req.json().catch(() => ({}));
+  const folder = (body.folder || '').split('/').map((x) => sanitizeFilename(x.trim())).filter(Boolean).join('/');
+  const targetDir = cleanDir(body.targetDir).join('/');
+  if (!folder) return c.json({ error: '缺少 folder' }, 400);
+  if (targetDir === folder || targetDir.startsWith(folder + '/')) return c.json({ error: '不能移动到自己的子目录' }, 403);
+  const isAdmin = user.roles.includes('admin');
+
+  // 权限：至少有该文件夹内有文件的可管理权（或文件夹记录存在）
+  const base = folder.split('/').pop();
+  const newBase = targetDir ? `${targetDir}/${base}` : base;
+
+  const rows = db.prepare('SELECT key FROM files').all().filter((r) => {
+    const d = dirFromKey(r.key);
+    if (d !== folder && !d.startsWith(folder + '/')) return false;
+    if (isAdmin) return true;
+    const parts = r.key.split('/');
+    return parts[1] !== 'admin' && parts[2] === encodeURIComponent(user.username);
+  });
+  for (const r of rows) {
+    const d = dirFromKey(r.key);
+    const relInFolder = d === folder ? '' : d.slice(folder.length + 1);
+    const newDir = [newBase, relInFolder].filter(Boolean).join('/');
+    const newKey = rekey(r.key, cleanDir(newDir));
+    if (newKey === r.key) continue;
+    if (db.prepare('SELECT 1 FROM files WHERE key = ?').get(newKey)) continue;
+    const oldFull = filePathOf(r.key);
+    const newFull = filePathOf(newKey);
+    if (!oldFull || !newFull || !existsSync(oldFull)) continue;
+    mkdirSync(path.dirname(newFull), { recursive: true });
+    try { renameSync(oldFull, newFull); } catch { continue; }
+    db.prepare('UPDATE files SET key = ? WHERE key = ?').run(newKey, r.key);
+  }
+  // folders 记录改前缀
+  const flds = db.prepare('SELECT id, path FROM folders').all();
+  for (const f of flds) {
+    if (f.path === folder || f.path.startsWith(folder + '/')) {
+      const newPath = newBase + f.path.slice(folder.length);
+      db.prepare('UPDATE folders SET path = ? WHERE id = ?').run(newPath, f.id);
+    }
+  }
+  return c.json({ ok: true, folder: newBase });
+});
+
 // 把父目录转成 key 前缀（用于存在性探测）：uploads/*/dir/...
 function __dirPrefix(parent) {
   return `uploads/%/${parent}/`;
@@ -1115,6 +1213,11 @@ app.post('/api/admin/subjects', async (c) => {
   const id = rid('sub');
   db.prepare('INSERT INTO subjects (id, name, slug, sort_order, created_at) VALUES (?, ?, ?, ?, ?)')
     .run(id, name, slugify(name), body.sortOrder ?? 0, Date.now());
+  // 自动在 admin 根目录建同名文件夹（幂等）
+  if (!db.prepare("SELECT 1 FROM folders WHERE IFNULL(subject_id, '') = '' AND path = ?").get(name)) {
+    db.prepare('INSERT INTO folders (id, subject_id, path, created_by, created_at) VALUES (?, NULL, ?, ?, ?)')
+      .run(rid('fld'), name, 'env-admin', Date.now());
+  }
   return c.json({ ok: true, id });
 });
 

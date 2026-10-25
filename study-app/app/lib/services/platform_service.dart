@@ -89,6 +89,18 @@ class PlatformService {
     await _dio.post('/folders', data: {if (subjectId != null) 'subjectId': subjectId, 'path': path});
   }
 
+  /// 删除文件夹（其中文件自动移到上级目录，不丢数据）
+  Future<void> deleteFolder(String path) async {
+    _ensure();
+    await _dio.delete('/folders', queryParameters: {'path': path});
+  }
+
+  /// 移动文件夹到目标目录
+  Future<void> moveFolder(String path, String targetDir) async {
+    _ensure();
+    await _dio.post('/folders/move', data: {'folder': path, 'targetDir': targetDir});
+  }
+
   // ---------- 移动/复制 ----------
 
   Future<void> moveFile(String key, String targetDir) async {
