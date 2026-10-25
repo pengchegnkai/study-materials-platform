@@ -351,13 +351,10 @@ class _FileManagerState extends ConsumerState<FileManager> {
 
   /// 子文件夹行（网格/列表视图共用）
   Widget _buildFolderRow() {
+    // 与网页端一致：白底描边胶囊（h36），主色文件夹图标，长按呼出移动/删除
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3),
-        border: Border(bottom: BorderSide(color: Theme.of(context).dividerColor)),
-      ),
       child: Wrap(
         spacing: 8,
         runSpacing: 8,
@@ -369,8 +366,10 @@ class _FileManagerState extends ConsumerState<FileManager> {
                 onTap: () => setState(() => _currentPath = _currentPath.isEmpty ? name : '$_currentPath/$name'),
                 borderRadius: BorderRadius.circular(8),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  height: 36,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
                   decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surface,
                     border: Border.all(color: Theme.of(context).dividerColor),
                     borderRadius: BorderRadius.circular(8),
                   ),
@@ -379,7 +378,9 @@ class _FileManagerState extends ConsumerState<FileManager> {
                     children: [
                       Icon(Icons.folder_outlined, size: 16, color: Theme.of(context).colorScheme.primary),
                       const SizedBox(width: 6),
-                      Text(name, style: const TextStyle(fontSize: 13)),
+                      Text(name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                      const SizedBox(width: 6),
+                      const Icon(Icons.chevron_right, size: 14, color: Color(0xFFC4C8D0)),
                     ],
                   ),
                 ),
@@ -449,6 +450,31 @@ class _FileManagerState extends ConsumerState<FileManager> {
               ),
             ),
             const Spacer(),
+            // 新建文件夹：显式按钮（网页端同款）
+            if (widget.onCreateFolder != null)
+              InkWell(
+                onTap: _showCreateFolderDialog,
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  height: 32,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Theme.of(context).dividerColor),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.create_new_folder_outlined, size: 15, color: cs.primary),
+                      if (!narrow) ...[
+                        const SizedBox(width: 5),
+                        const Text('新建文件夹', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500)),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            const SizedBox(width: 6),
             // 文件夹操作
             if (hasFolderActions)
               PopupMenuButton<String>(
@@ -660,7 +686,7 @@ class _FileManagerState extends ConsumerState<FileManager> {
             child: Row(children: [
               Icon(Icons.folder_outlined, size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
               const SizedBox(width: 4),
-              Text('全部文件', style: TextStyle(fontSize: 13, color: _currentPath.isEmpty ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurfaceVariant)),
+              Text('全部文件', style: TextStyle(fontSize: 13, fontWeight: _currentPath.isEmpty ? FontWeight.w600 : FontWeight.w400, color: _currentPath.isEmpty ? const Color(0xFF111827) : Theme.of(context).colorScheme.onSurfaceVariant)),
             ]),
           ),
           for (var i = 0; i < segs.length; i++) ...[
@@ -671,7 +697,7 @@ class _FileManagerState extends ConsumerState<FileManager> {
                 segs[i],
                 style: TextStyle(
                   fontSize: 13,
-                  color: i == segs.length - 1 ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurfaceVariant,
+                  color: i == segs.length - 1 ? const Color(0xFF111827) : Theme.of(context).colorScheme.onSurfaceVariant,
                   fontWeight: i == segs.length - 1 ? FontWeight.w600 : FontWeight.w400,
                 ),
               ),

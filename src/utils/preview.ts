@@ -40,12 +40,38 @@ export async function renderPreview(
         if (!gbk.includes('\uFFFD')) text = gbk;
       } catch {}
     }
-    // 图片引用解析：相对路径 src → 在同科目 manifest 里按文件名匹配 key → /api/file?key=
+    // 图片引用解析：相对路径 src → 在 manifest 里按路径/文件名匹配 key → /api/file?key=
+    // 匹配优先级：① 当前目录 + 相对路径完整 key ② key 以相对路径结尾（子目录引用）
+    //            ③ 同目录同名 ④ 全局同名（兜底）
     if (manifest && manifest.length > 0) {
+      const decode = (v: string) => {
+        try {
+          return decodeURIComponent(v);
+        } catch {
+          return v;
+        }
+      };
+      const dirOf = (k: string) => (k.includes('/') ? k.slice(0, k.lastIndexOf('/')) : '');
+      const nameOf = (k: string) => k.split('/').pop() || '';
+      const mdDir = fileKey.includes('/') ? fileKey.slice(0, fileKey.lastIndexOf('/')) : '';
+
       text = text.replace(/(!\[[^\]]*\]\()([^)\s]+)(\s+"[^"]*")?\)/g, (whole, pre, src, post) => {
-        const clean = decodeURIComponent(src.replace(/^\.\//, '').split('/').pop() || '');
-        if (!clean || /^(https?:|data:)/.test(src)) return whole;
-        const hit = manifest.find((f) => (f.key.split('/').pop() || '') === clean);
+        if (/^(https?:|data:|blob:)/i.test(src)) return whole;
+        // 解码 + 规范化相对路径（处理 ./ 与 ../）
+        const segs: string[] = [];
+        for (const part of decode(src).replace(/\\/g, '/').split('/')) {
+          if (part === '..') segs.pop();
+          else if (part !== '.' && part !== '') segs.push(part);
+        }
+        const relPath = segs.join('/');
+        const baseName = segs[segs.length - 1] || '';
+        if (!baseName) return whole;
+
+        let hit: ManifestFileMeta | undefined;
+        if (mdDir) hit = manifest.find((f) => f.key === `${mdDir}/${relPath}`);
+        hit ??= manifest.find((f) => f.key.endsWith(`/${relPath}`));
+        hit ??= manifest.find((f) => nameOf(f.key) === baseName && dirOf(f.key) === mdDir);
+        hit ??= manifest.find((f) => nameOf(f.key) === baseName);
         return hit ? `${pre}/api/file?key=${encodeURIComponent(hit.key)}${post ?? ''})` : whole;
       });
     }

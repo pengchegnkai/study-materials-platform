@@ -57,32 +57,80 @@ class _PreviewPageState extends State<PreviewPage> {
     }
   }
 
-  /// Markdown 图片引用：src 的文件名在同目录（其次全局）匹配 manifest key，
-  /// 用带 Bearer 的 fileBytes 拉取字节渲染；外链 http(s) 直接网络加载。
-  Widget _mdImage(Uri uri) {
-    final src = uri.toString();
-    if (src.startsWith('http://') || src.startsWith('https://')) {
-      return Image.network(src, errorBuilder: (_, __, ___) => _imgPlaceholder());
+  /// Markdown 图片引用解析（与网页端同规则）：
+  /// ① 当前目录 + 相对路径完整 key ② key 以相对路径结尾（子目录引用）
+  /// ③ 同目录同名 ④ 全局同名（兜底）；支持 URL 编码、./ 与 ../ 相对路径。
+  String? _matchManifestImage(String raw) {
+    String decode(String v) {
+      try {
+        return Uri.decodeComponent(v);
+      } catch (_) {
+        return v;
+      }
     }
-    final baseName = src.replaceFirst('./', '').split('/').last;
+
+    String dirOf(String k) => k.contains('/') ? k.substring(0, k.lastIndexOf('/')) : '';
+    String nameOf(String k) => k.split('/').last;
+
+    // 规范化相对路径：解码后处理 ./ 与 ../
+    final segs = <String>[];
+    for (final part in decode(raw).replaceAll('\\', '/').split('/')) {
+      if (part == '..') {
+        if (segs.isNotEmpty) segs.removeLast();
+      } else if (part != '.' && part.isNotEmpty) {
+        segs.add(part);
+      }
+    }
+    final relPath = segs.join('/');
+    final baseName = segs.isEmpty ? '' : segs.last;
+    if (baseName.isEmpty) return null;
+
     final keys = _manifestFiles.map((f) => f.key).toList();
     final curDir = widget.fileKey.contains('/')
         ? widget.fileKey.substring(0, widget.fileKey.lastIndexOf('/'))
         : '';
-    String? hit;
-    for (final k in keys) {
-      if (k.split('/').last == baseName &&
-          (k.contains('/') ? k.substring(0, k.lastIndexOf('/')) : '') == curDir) {
-        hit = k;
-        break;
+
+    if (curDir.isNotEmpty) {
+      for (final k in keys) {
+        if (k == '$curDir/$relPath') return k;
       }
     }
-    hit ??= () {
-      for (final k in keys) {
-        if (k.split('/').last == baseName) return k;
-      }
-      return null;
-    }();
+    for (final k in keys) {
+      if (k.endsWith('/$relPath')) return k;
+    }
+    for (final k in keys) {
+      if (nameOf(k) == baseName && dirOf(k) == curDir) return k;
+    }
+    for (final k in keys) {
+      if (nameOf(k) == baseName) return k;
+    }
+    return null;
+  }
+
+  /// Markdown 图片：外链 http(s) 网络加载，data: 内嵌解码，其余按 manifest 匹配拉字节。
+  Widget _mdImage(Uri uri) {
+    final src = uri.toString();
+    if (src.startsWith('data:')) {
+      try {
+        final comma = src.indexOf(',');
+        if (comma > 0) {
+          final meta = src.substring(5, comma); // 如 image/png;base64
+          final payload = src.substring(comma + 1);
+          final Uint8List bytes = meta.contains('base64')
+              ? base64Decode(payload)
+              : Uint8List.fromList(latin1.encode(Uri.decodeFull(payload)));
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.memory(bytes, fit: BoxFit.contain),
+          );
+        }
+      } catch (_) {}
+      return _imgPlaceholder();
+    }
+    if (src.startsWith('http://') || src.startsWith('https://')) {
+      return Image.network(src, errorBuilder: (_, __, ___) => _imgPlaceholder());
+    }
+    final hit = _matchManifestImage(src);
     if (hit == null) return _imgPlaceholder();
     return FutureBuilder<Response<List<int>>>(
       future: _svc.fileBytes(hit),
@@ -156,7 +204,16 @@ class _PreviewPageState extends State<PreviewPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+        title: Row(
+          children: [
+            // 类型标签（网页端同款彩色胶囊）
+            Flexible(
+              child: Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+            const SizedBox(width: 8),
+            _typeBadge(),
+          ],
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.download_outlined),
@@ -167,6 +224,32 @@ class _PreviewPageState extends State<PreviewPage> {
         ],
       ),
       body: _buildBody(),
+    );
+  }
+
+  /// 文件类型彩色胶囊（网页端 Badge 同款配色）
+  Widget _typeBadge() {
+    final ext = widget.fileKey.split('.').last.toLowerCase();
+    final type = widget.type.toLowerCase();
+    String label;
+    Color bg, fg;
+    if (type == 'pdf' || ext == 'pdf') {
+      label = 'PDF'; bg = const Color(0xFFFEF2F2); fg = const Color(0xFFDC2626);
+    } else if (type == 'docx' || ['doc', 'docx'].contains(ext)) {
+      label = 'WORD'; bg = const Color(0xFFEFF6FF); fg = const Color(0xFF2563EB);
+    } else if (type == 'pptx' || ['ppt', 'pptx'].contains(ext)) {
+      label = 'PPT'; bg = const Color(0xFFFFF7ED); fg = const Color(0xFFEA580C);
+    } else if (type == 'image' || ['png', 'jpg', 'jpeg', 'gif', 'webp'].contains(ext)) {
+      label = '图片'; bg = const Color(0xFFFAF5FF); fg = const Color(0xFF9333EA);
+    } else if (type == 'markdown' || ['md', 'markdown'].contains(ext)) {
+      label = 'MD'; bg = const Color(0xFFEEF2FF); fg = const Color(0xFF4F46E5);
+    } else {
+      return const SizedBox.shrink();
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
+      child: Text(label, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: fg, letterSpacing: 0.3)),
     );
   }
 
