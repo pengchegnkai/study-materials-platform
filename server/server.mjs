@@ -527,11 +527,15 @@ app.get('/api/file', async (c) => {
   if (!full || !existsSync(full)) return c.json({ error: '文件不存在' }, 404);
 
   const stream = Readable.toWeb(createReadStream(full));
+  // download=1 强制下载（Content-Disposition: attachment），否则浏览器内联预览
+  const forceDownload = c.req.query('download') === '1';
+  const disposition = forceDownload ? 'attachment' : 'inline';
+  const rawName = row.title || key.split('/').pop() || 'file';
   return new Response(stream, {
     headers: {
       'Content-Type': row.content_type || 'application/octet-stream',
       'Content-Length': String(row.size ?? statSync(full).size),
-      'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(key.split('/').pop())}`,
+      'Content-Disposition': `${disposition}; filename*=UTF-8''${encodeURIComponent(rawName)}`,
       'Cache-Control': 'private, no-store',
     },
   });

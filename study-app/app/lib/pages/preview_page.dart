@@ -113,6 +113,37 @@ class _PreviewPageState extends State<PreviewPage> {
         child: const Icon(Icons.broken_image_outlined, color: Color(0xFF9CA3AF)),
       );
 
+  /// 下载：保存到手机下载目录（无外部存储则存应用文档目录）
+  Future<void> _download() async {
+    final bytes = _bytes;
+    if (bytes == null || bytes.isEmpty) {
+      _toast('文件尚未加载完成');
+      return;
+    }
+    try {
+      final name = widget.fileKey.split('/').last;
+      Directory? target;
+      try {
+        final ext = await getExternalStorageDirectory();
+        if (ext != null) {
+          target = Directory('${ext.path}/Download');
+          await target.create(recursive: true);
+        }
+      } catch (_) {}
+      target ??= await getApplicationDocumentsDirectory();
+      final f = File('${target.path}/$name');
+      await f.writeAsBytes(bytes, flush: true);
+      _toast('已下载到 ${f.path}');
+    } catch (e) {
+      _toast('下载失败：$e'.replaceFirst('Exception: ', ''));
+    }
+  }
+
+  void _toast(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
   Future<void> _share() async {
     final dir = await getTemporaryDirectory();
     final name = widget.fileKey.split('/').last;
@@ -127,6 +158,11 @@ class _PreviewPageState extends State<PreviewPage> {
       appBar: AppBar(
         title: Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.download_outlined),
+            tooltip: '下载到本地',
+            onPressed: _bytes == null ? null : _download,
+          ),
           IconButton(icon: const Icon(Icons.ios_share), onPressed: _bytes == null ? null : _share),
         ],
       ),

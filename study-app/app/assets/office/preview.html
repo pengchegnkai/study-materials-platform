@@ -55,6 +55,21 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   h3.sheet { font-size:14px; font-weight:600; margin:14px 0 6px; color:#4F46E5; }
   table { border-collapse:collapse; font-size:12px; }
   td, th { border:1px solid #E5E7EB; padding:3px 7px; white-space:nowrap; }
+
+  /* Word 预览：竖屏自适应，禁止横向溢出 */
+  .docx-wrapper { padding: 8px !important; background: transparent !important; display: block !important; }
+  .docx-wrapper > section.docx {
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    padding: 20px 16px !important;
+    box-sizing: border-box !important;
+    margin: 0 auto 12px !important;
+    box-shadow: 0 1px 4px rgba(17,24,39,0.08) !important;
+  }
+  .docx-wrapper table { max-width: 100% !important; }
+  #container { overflow-x: auto; max-width: 100vw; box-sizing: border-box; }
+  #container img { max-width: 100% !important; height: auto !important; }
 </style>
 </head>
 <body>
@@ -79425,7 +79440,7 @@ window.renderFile = async function (kind, base64) {
   try {
     if (kind === 'docx') {
       container.innerHTML = '';
-      await window.docx.renderAsync(bytes, container, null, { inWrapper: true, ignoreWidth: false });
+      await window.docx.renderAsync(bytes, container, null, { inWrapper: true, ignoreWidth: true, ignoreHeight: true });
     } else if (kind === 'excel') {
       container.innerHTML = '';
       const wb = window.XLSX.read(bytes, { type: 'array' });

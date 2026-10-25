@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Download } from 'lucide-react';
 import { Badge } from '../components/Badge';
 import { useToast } from '../components/Toast';
 import { apiGet } from '../utils/api';
@@ -63,6 +63,18 @@ export default function PreviewPage() {
           {meta?.title ?? '加载中…'}
         </h1>
         {meta && <Badge tone="role">{meta.type.toUpperCase()}</Badge>}
+        <a
+          href={key ? `/api/file?key=${encodeURIComponent(key)}&download=1` : '#'}
+          className={`h-9 px-3.5 inline-flex items-center gap-1.5 rounded-btn text-[13px] font-medium transition-all duration-150 ${
+            key
+              ? 'bg-gradient-to-b from-indigo-500 to-indigo-600 text-white shadow-[0_2px_8px_rgba(79,70,229,0.28)] hover:to-indigo-700'
+              : 'bg-gray-100 text-gray-400 pointer-events-none'
+          }`}
+          download
+        >
+          <Download size={15} />
+          下载
+        </a>
       </div>
 
       <div className="max-w-[1200px] w-full mx-auto px-4 md:px-6 pb-6 flex-1 min-h-0">
