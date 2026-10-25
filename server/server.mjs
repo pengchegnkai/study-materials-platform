@@ -552,6 +552,16 @@ app.post('/api/upload', async (c) => {
     subjectSlug = s.slug; subjectName = s.name;
   }
 
+  // 科目归属：显式 subjectId 优先；否则按 path 首段匹配科目名（保证「科目/...」目录都归属该科目）
+  let finalSubjectId = subjectId || null;
+  if (!finalSubjectId && folderPath) {
+    const first = folderPath.split('/').filter(Boolean)[0];
+    if (first) {
+      const match = db.prepare('SELECT id FROM subjects WHERE name = ?').get(first);
+      if (match) finalSubjectId = match.id;
+    }
+  }
+
   const key = buildObjectKey(isAdmin ? 'admin' : 'teacher', subjectSlug, user.username, file.name || 'file', folderPath);
   const full = filePathOf(key);
   if (!full) return c.json({ error: '非法路径' }, 400);
@@ -563,7 +573,7 @@ app.post('/api/upload', async (c) => {
   db.prepare(
     `INSERT INTO files (key, title, subject_id, uploader_id, uploader_username, visibility, uploaded_at, size, content_type)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(key, file.name || 'file', subjectId || null, user.sub, user.username, visibility, Date.now(), file.size, file.type || 'application/octet-stream');
+  ).run(key, file.name || 'file', finalSubjectId, user.sub, user.username, visibility, Date.now(), file.size, file.type || 'application/octet-stream');
 
   return c.json({ ok: true, key, subject: subjectName });
 });
@@ -834,18 +844,24 @@ app.get('/api/folders', async (c) => {
   if (!user) return;
   const subjectId = c.req.query('subjectId') || null;
   const set = new Set();
+  let subjectName = null;
   if (subjectId) {
-    for (const r of db.prepare('SELECT path FROM folders WHERE subject_id = ?').all(subjectId)) set.add(r.path);
-  } else {
-    for (const r of db.prepare('SELECT path FROM folders').all()) set.add(r.path);
+    const subj = db.prepare('SELECT name FROM subjects WHERE id = ?').get(subjectId);
+    subjectName = subj?.name ?? null;
   }
-  // 从文件 key 提取隐含目录
-  const rows = db.prepare('SELECT key FROM files').all();
-  for (const r of rows) {
+  for (const r of db.prepare('SELECT path, subject_id FROM folders').all()) {
     if (subjectId) {
-      const f = db.prepare('SELECT subject_id FROM files WHERE key = ?').get(r.key);
-      if (f?.subject_id !== subjectId) continue;
+      // 归属该科目的 folder：显式 subject_id 匹配，或路径首段就是科目名
+      const belongs = r.subject_id === subjectId ||
+        (subjectName && (r.path === subjectName || r.path.startsWith(subjectName + '/')));
+      if (!belongs) continue;
     }
+    set.add(r.path);
+  }
+  // 从文件 key 提取隐含目录（按文件科目归属过滤）
+  const rows = db.prepare('SELECT key, subject_id FROM files').all();
+  for (const r of rows) {
+    if (subjectId && r.subject_id !== subjectId) continue;
     const dir = dirFromKey(r.key);
     if (dir) set.add(dir);
   }
@@ -858,13 +874,19 @@ app.post('/api/folders', async (c) => {
   if (!user) return;
   if (!user.roles.includes('admin') && !user.roles.includes('teacher')) return c.json({ error: '无权限' }, 403);
   const body = await c.req.json().catch(() => ({}));
-  const subjectId = body.subjectId || null;
   const path = (body.path || '')
     .split('/')
     .map((s) => sanitizeFilename(s.trim()))
     .filter(Boolean)
     .join('/');
   if (!path) return c.json({ error: '文件夹名不能为空' }, 400);
+  // 科目归属：显式 subjectId 优先，否则按路径首段匹配科目名
+  let subjectId = body.subjectId || null;
+  if (!subjectId) {
+    const first = path.split('/')[0];
+    const match = db.prepare('SELECT id FROM subjects WHERE name = ?').get(first);
+    if (match) subjectId = match.id;
+  }
   // 父目录校验
   const parts = path.split('/');
   if (parts.length > 1) {
@@ -1213,10 +1235,13 @@ app.post('/api/admin/subjects', async (c) => {
   const id = rid('sub');
   db.prepare('INSERT INTO subjects (id, name, slug, sort_order, created_at) VALUES (?, ?, ?, ?, ?)')
     .run(id, name, slugify(name), body.sortOrder ?? 0, Date.now());
-  // 自动在 admin 根目录建同名文件夹（幂等）
-  if (!db.prepare("SELECT 1 FROM folders WHERE IFNULL(subject_id, '') = '' AND path = ?").get(name)) {
-    db.prepare('INSERT INTO folders (id, subject_id, path, created_by, created_at) VALUES (?, NULL, ?, ?, ?)')
-      .run(rid('fld'), name, 'env-admin', Date.now());
+  // 自动建同名科目文件夹（幂等，绑定 subject_id 便于按科目过滤）
+  const exist = db.prepare('SELECT 1 FROM folders WHERE path = ?').get(name);
+  if (!exist) {
+    db.prepare('INSERT INTO folders (id, subject_id, path, created_by, created_at) VALUES (?, ?, ?, ?, ?)')
+      .run(rid('fld'), id, name, 'env-admin', Date.now());
+  } else {
+    db.prepare('UPDATE folders SET subject_id = ? WHERE path = ?').run(id, name);
   }
   return c.json({ ok: true, id });
 });

@@ -384,6 +384,8 @@ function FilesTab() {
   const { toast } = useToast();
   const [files, setFiles] = useState<AdminFile[] | null>(null);
   const [currentDir, setCurrentDir] = useState('');
+  const [subjects, setSubjects] = useState<{ id: string; name: string }[]>([]);
+  const [subjectFilter, setSubjectFilter] = useState(''); // '' = 全部
   const [folders, setFolders] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
@@ -395,20 +397,32 @@ function FilesTab() {
   const load = useCallback(async () => {
     setFiles(null);
     try {
-      const [d, f] = await Promise.all([
+      const [d, f, s] = await Promise.all([
         apiGet<{ files: AdminFile[] }>('/api/manifest'),
-        apiGet<{ folders: string[] }>('/api/folders'),
+        apiGet<{ folders: string[] }>(
+          subjectFilter ? `/api/folders?subjectId=${encodeURIComponent(subjectFilter)}` : '/api/folders'
+        ),
+        apiGet<{ subjects: { id: string; name: string }[] }>('/api/subjects'),
       ]);
       setFiles(d.files);
       setFolders(f.folders);
+      setSubjects(s.subjects ?? []);
     } catch {
       setFiles([]);
     }
-  }, []);
+  }, [subjectFilter]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  // 当前科目名（用于文件过滤）
+  const subjectName = subjects.find((x) => x.id === subjectFilter)?.name ?? '';
+  const scopedFiles = (files ?? []).filter((f) => {
+    if (!subjectName) return true;
+    if (f.subject === subjectName) return true;
+    return (f.dir ?? '') === subjectName || (f.dir ?? '').startsWith(subjectName + '/');
+  });
 
   // 当前目录下的子文件夹
   const subFolders = folders
@@ -418,7 +432,7 @@ function FilesTab() {
     })
     .map((p) => (currentDir === '' ? p : p.slice(currentDir.length + 1)));
 
-  const dirFiles = (files ?? []).filter((f) => (f.dir ?? '') === currentDir);
+  const dirFiles = scopedFiles.filter((f) => (f.dir ?? '') === currentDir);
 
   const createFolder = async () => {
     const name = newFolderName.trim();
@@ -491,11 +505,39 @@ function FilesTab() {
   return (
     <div>
       <h1 className="hidden lg:block text-h2 font-semibold text-ink dark:text-gray-100 mb-6">文件管理</h1>
+
+      {/* 科目切换：一级导航 */}
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <button
+          onClick={() => { setSubjectFilter(''); setCurrentDir(''); }}
+          className={`h-9 px-4 rounded-full text-[13px] font-medium transition-all duration-150 cursor-pointer ${
+            subjectFilter === ''
+              ? 'bg-primary text-white shadow-card'
+              : 'bg-white dark:bg-gray-900 border border-line dark:border-gray-700 text-ink-secondary dark:text-gray-400 hover:border-primary dark:hover:border-indigo-500'
+          }`}
+        >
+          全部科目
+        </button>
+        {subjects.map((sj) => (
+          <button
+            key={sj.id}
+            onClick={() => { setSubjectFilter(sj.id); setCurrentDir(sj.name); }}
+            className={`h-9 px-4 rounded-full text-[13px] font-medium transition-all duration-150 cursor-pointer ${
+              subjectFilter === sj.id
+                ? 'bg-primary text-white shadow-card'
+                : 'bg-white dark:bg-gray-900 border border-line dark:border-gray-700 text-ink-secondary dark:text-gray-400 hover:border-primary dark:hover:border-indigo-500'
+            }`}
+          >
+            {sj.name}
+          </button>
+        ))}
+      </div>
+
       {/* 工具行：面包屑 + 新建文件夹 */}
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <nav className="flex items-center gap-1 text-[13px] flex-1 min-w-0">
-          <button onClick={() => setCurrentDir('')} className="text-ink-secondary dark:text-gray-400 hover:text-primary transition-all duration-150 cursor-pointer">
-            全部文件
+          <button onClick={() => setCurrentDir(subjectName)} className="text-ink-secondary dark:text-gray-400 hover:text-primary transition-all duration-150 cursor-pointer">
+            {subjectName || '全部文件'}
           </button>
           {currentDir.split('/').filter(Boolean).map((seg, i, arr) => (
             <span key={i} className="flex items-center gap-1">

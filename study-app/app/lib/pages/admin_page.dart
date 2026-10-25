@@ -252,6 +252,7 @@ class _FilesTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final adminFiles = ref.watch(adminFilesProvider);
     final folders = ref.watch(adminFoldersProvider);
+    final subjects = ref.watch(adminSubjectsProvider);
 
     return adminFiles.when(
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -278,6 +279,10 @@ class _FilesTab extends ConsumerWidget {
           },
           onDeleteFolder: (path) => ref.read(adminProvider).deleteFolder(path),
           onMoveFolder: (path, targetDir) => ref.read(adminProvider).moveFolder(path, targetDir),
+          subjects: subjects.value
+                  ?.map((x) => (id: x.id, name: x.name))
+                  .toList() ??
+              const [],
           canManage: true,
         ),
       ),

@@ -26,6 +26,8 @@ class FileManager extends ConsumerStatefulWidget {
   final Future<void> Function(String path)? onDeleteFolder;
   /// 移动文件夹到目标目录，null 则隐藏入口
   final Future<void> Function(String path, String targetDir)? onMoveFolder;
+  /// 科目列表（非空时顶部显示科目 chips，作为文件管理的一级导航）
+  final List<({String id, String name})> subjects;
 
   const FileManager({
     super.key,
@@ -40,6 +42,7 @@ class FileManager extends ConsumerStatefulWidget {
     this.onMoveCopy,
     this.onDeleteFolder,
     this.onMoveFolder,
+    this.subjects = const [],
   });
 
   @override
@@ -49,6 +52,7 @@ class FileManager extends ConsumerStatefulWidget {
 class _FileManagerState extends ConsumerState<FileManager> {
   final Set<String> _selectedKeys = {};
   String _currentPath = '';
+  String _subjectId = ''; // '' = 全部科目
   String _viewMode = 'list'; // 'list' | 'grid'
   String _sortBy = 'name'; // 'name' | 'size' | 'date'
   bool _sortAsc = true;
@@ -57,11 +61,36 @@ class _FileManagerState extends ConsumerState<FileManager> {
   Offset? _menuPosition;
 
   /// 当前目录下的文件
-  List<AdminFile> get _dirFiles =>
-      widget.files.where((f) => f.dir == _currentPath).toList();
+  List<AdminFile> get _dirFiles {
+    final scoped = _subjectName.isEmpty
+        ? widget.files
+        : widget.files
+            .where((f) =>
+                f.subject == _subjectName ||
+                f.dir == _subjectName ||
+                f.dir.startsWith('$_subjectName/'))
+            .toList();
+    return scoped.where((f) => f.dir == _currentPath).toList();
+  }
+
+  /// 当前选中的科目名（'' = 全部科目）
+  String get _subjectName {
+    for (final s in widget.subjects) {
+      if (s.id == _subjectId) return s.name;
+    }
+    return '';
+  }
+
+  /// 科目范围内的全部目录
+  List<String> get _scopedFolders {
+    if (_subjectName.isEmpty) return widget.folders;
+    return widget.folders
+        .where((p) => p == _subjectName || p.startsWith('$_subjectName/'))
+        .toList();
+  }
 
   /// 当前目录下的子文件夹（下一层）
-  List<String> get _subFolders => widget.folders
+  List<String> get _subFolders => _scopedFolders
       .where((p) {
         if (_currentPath.isEmpty) return !p.contains('/');
         return p.startsWith('$_currentPath/') &&
@@ -239,6 +268,8 @@ class _FileManagerState extends ConsumerState<FileManager> {
   Widget build(BuildContext context) {
     return Column(
       children: [
+        // 科目 chips（一级导航）
+        if (widget.subjects.isNotEmpty) _buildSubjectChips(),
         // 工具栏
         _buildToolbar(),
         // 面包屑/路径
@@ -252,6 +283,59 @@ class _FileManagerState extends ConsumerState<FileManager> {
         // 底部状态栏
         _buildStatusBar(),
       ],
+    );
+  }
+
+  /// 科目 chips 行：清晰的一级维度（全部科目 / 各科目）
+  Widget _buildSubjectChips() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        border: Border(bottom: BorderSide(color: Theme.of(context).dividerColor)),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _subjectChip('', '全部科目', ''),
+            for (final s in widget.subjects) _subjectChip(s.id, s.name, s.name),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _subjectChip(String id, String label, String folderPath) {
+    final selected = _subjectId == id;
+    final cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: InkWell(
+        onTap: () => setState(() {
+          _subjectId = id;
+          _currentPath = folderPath; // 切科目直接进入该科目目录
+          _selectedKeys.clear();
+        }),
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+          decoration: BoxDecoration(
+            color: selected ? cs.primary : cs.surfaceContainerHighest.withOpacity(0.6),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: selected ? cs.primary : Theme.of(context).dividerColor),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+              color: selected ? cs.onPrimary : cs.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ),
     );
   }
 

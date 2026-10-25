@@ -26,6 +26,7 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
   ({int current, int total, int pct, String name})? _progress;
   List<FileItem> _myFiles = [];
   List<String> _folders = [];
+  List<({String id, String name})> _subjects = [];
 
   @override
   void initState() {
@@ -44,10 +45,12 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
     try {
       final all = await _svc.manifest();
       final folders = await _svc.folders().catchError((_) => <String>[]);
+      final subjects = await _svc.subjects().catchError((_) => <Subject>[]);
       if (!mounted) return;
       setState(() {
         _myFiles = all.where((f) => f.canManage).toList();
         _folders = folders;
+        _subjects = subjects.map((x) => (id: x.id, name: x.name)).toList();
         _loadingFiles = false;
       });
     } catch (_) {
@@ -381,6 +384,7 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
                         _toast('移动失败：$e'.replaceFirst('Exception: ', ''));
                       }
                     },
+                    subjects: _subjects,
                     canManage: true,
                   ),
           ),
