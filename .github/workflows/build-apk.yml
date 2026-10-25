@@ -189,9 +189,22 @@ jobs:
           trap 'echo "::error::REL $(tail -n 8 /tmp/rel.log 2>/dev/null | tr "\n" " ")"' ERR
           set -o pipefail
           cp study-app-${GITHUB_SHA::7}.apk study-app-latest.apk
-          printf 'commit %s · built %s\n' "${GITHUB_SHA::7}" "${GITHUB_RUN_ID}" > /tmp/notes.txt
+          # 版本号与构建号写进 Release 说明，App 端据此做滚动更新检测
+          VER="1.0.0-beta.${GITHUB_RUN_ID}"
+          ELAPSED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          SIZE=$(stat -c%s study-app-latest.apk)
+          {
+            echo "version=${VER}"
+            echo "build=${GITHUB_RUN_NUMBER}"
+            echo "size=${SIZE}"
+            echo "builtAt=${ELAPSED}"
+            echo "commit=${GITHUB_SHA::7}"
+            echo "download=https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/study-app-latest.apk"
+            echo ""
+            echo "滚动更新：App 内「检查更新」可直接下载覆盖安装（签名已固定）。"
+          } > /tmp/notes.txt
           gh release delete latest --yes 2>/dev/null || true
           gh release create latest study-app-latest.apk \
-            --title "学习资料 APK（自动构建）" \
+            --title "班级资料共享 ${VER}" \
             --notes-file /tmp/notes.txt 2>&1 | tee /tmp/rel.log
           echo "::notice::REL https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/study-app-latest.apk"

@@ -25,6 +25,9 @@ dependencies:
   file_picker: ^8.0.0
   # 存储权限（文件夹上传遍历需要）
   permission_handler: ^11.3.0
+  # 滚动更新：读自身版本 + 调起 APK 安装
+  package_info_plus: ^8.0.0
+  open_filex: ^4.4.0
   share_plus: ^7.2.1
   # Office 预览：xlsx 表格解析 + zip 解包（docx/pptx 文本提取）
   spreadsheet_decoder: ^2.3.0

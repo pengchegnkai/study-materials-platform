@@ -919,6 +919,66 @@ app.get('/api/admin/dashboard', async (c) => {
   });
 });
 
+// App 滚动更新：最新版本信息（代理 GitHub Release，缓存 10 分钟）
+let _appLatestCache = { at: 0, data: null };
+const APP_REPO = 'pengchegnkai/study-materials-platform';
+const APP_APK_URL = `https://github.com/${APP_REPO}/releases/latest/download/study-app-latest.apk`;
+
+app.get('/api/app/latest', async (c) => {
+  const now = Date.now();
+  if (_appLatestCache.data && now - _appLatestCache.at < 10 * 60 * 1000) {
+    return c.json(_appLatestCache.data);
+  }
+  const fallback = {
+    version: '',
+    build: 0,
+    size: 0,
+    builtAt: '',
+    download: APP_APK_URL,
+    notes: '',
+    source: 'fallback',
+  };
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
+    const resp = await fetch(`https://api.github.com/repos/${APP_REPO}/releases/tags/latest`, {
+      headers: { 'Accept': 'application/vnd.github+json', 'User-Agent': 'study-platform' },
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if (!resp.ok) throw new Error(`GitHub ${resp.status}`);
+    const rel = await resp.json();
+    const body = String(rel.body || '');
+    const read = (key) => {
+      const m = body.match(new RegExp(`^${key}=(.+)$`, 'm'));
+      return m ? m[1].trim() : '';
+    };
+    const asset = (rel.assets || []).find((a) => a.name === 'study-app-latest.apk') || (rel.assets || [])[0];
+    let version = read('version');
+    if (!version) {
+      const m = String(rel.name || '').match(/(\d+\.\d+\.\d+-beta\.\d+)/);
+      if (m) version = m[1];
+    }
+    const data = {
+      version: version || '',
+      build: Number(read('build') || 0) || 0,
+      size: Number(read('size') || 0) || (asset?.size ?? 0),
+      builtAt: read('builtAt') || rel.published_at || '',
+      download: read('download') || asset?.browser_download_url || APP_APK_URL,
+      notes: body.slice(0, 500),
+      source: 'github',
+    };
+    _appLatestCache = { at: now, data };
+    return c.json(data);
+  } catch (e) {
+    // GitHub 不可达时返回兜底（客户端仍可走固定下载地址）
+    const data = { ...fallback, notes: `版本信息获取失败: ${String(e).slice(0, 120)}` };
+    if (_appLatestCache.data) return c.json(_appLatestCache.data);
+    _appLatestCache = { at: now - 9 * 60 * 1000, data };
+    return c.json(data);
+  }
+});
+
 // 实时日志：GET /api/admin/logs?limit=50
 app.get('/api/admin/logs', async (c) => {
   if (!(await requireAdmin(c))) return;

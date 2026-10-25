@@ -210,6 +210,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                     () => context.push('/server-config')),
                 const Divider(height: 1, indent: 56),
                 _menuTile(Icons.swap_horiz, '切换账号', '退出并登录其他账号', _switchAccount),
+                const Divider(height: 1, indent: 56),
+                _menuTile(Icons.system_update_alt, '检查更新', '滚动更新，无需重新安装', () => context.push('/update')),
               ],
             ),
           ),
