@@ -79447,8 +79447,9 @@ window.renderFile = async function (kind, base64) {
       }
       if (!window.__pptxReady) throw new Error('渲染引擎未就绪');
       container.innerHTML = '';
-      const renderer = new window.__PptxRenderer();
-      await renderer.preview(bytes, container);
+      // 容器在构造函数传入（preview 只接收数据与选项）
+      const renderer = new window.__PptxRenderer(container);
+      await renderer.preview(bytes);
     }
     window.__renderDone = true;
   } catch (e) {

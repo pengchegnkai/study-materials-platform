@@ -148,7 +148,14 @@ class _PreviewPageState extends State<PreviewPage> {
       case 'image':
         return PhotoView(imageProvider: MemoryImage(bytes), backgroundDecoration: const BoxDecoration(color: Color(0xFF111827)));
       case 'markdown':
-        final text = utf8.decode(bytes, allowMalformed: true);
+        // UTF-8 优先；出现替换符（乱码）则按 GBK 回退解码（国内常见 GBK 编码 md/txt）
+        var text = utf8.decode(bytes, allowMalformed: true);
+        if (text.contains('\uFFFD')) {
+          try {
+            final gbk = const GbkCodec(allowMalformed: true).decode(bytes);
+            if (!gbk.contains('\uFFFD')) text = gbk;
+          } catch (_) {}
+        }
         return Markdown(
           data: text,
           selectable: true,

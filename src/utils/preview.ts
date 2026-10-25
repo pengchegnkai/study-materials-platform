@@ -33,6 +33,12 @@ export async function renderPreview(
 
   if (kind === 'markdown') {
     let text = new TextDecoder().decode(buffer);
+    if (text.includes('\uFFFD')) {
+      try {
+        const gbk = new TextDecoder('gbk').decode(buffer);
+        if (!gbk.includes('\uFFFD')) text = gbk;
+      } catch {}
+    }
     // 图片引用解析：相对路径 src → 在同科目 manifest 里按文件名匹配 key → /api/file?key=
     if (manifest && manifest.length > 0) {
       text = text.replace(/(!\[[^\]]*\]\()([^)\s]+)(\s+"[^"]*")?\)/g, (whole, pre, src, post) => {
