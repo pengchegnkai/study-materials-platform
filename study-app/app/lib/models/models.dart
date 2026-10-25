@@ -42,6 +42,7 @@ class FileItem {
   final String visibility; // published / private
   final int uploadedAt;
   final bool canManage;
+  final String dir; // 虚拟目录（manifest 返回）
 
   bool get isPublished => visibility == 'published';
 
@@ -56,12 +57,14 @@ class FileItem {
     required this.visibility,
     required this.uploadedAt,
     required this.canManage,
+    this.dir = '',
   });
 
   factory FileItem.fromJson(Map<String, dynamic> j) => FileItem(
         key: j['key'] as String,
         title: (j['title'] ?? '') as String,
         type: (j['type'] ?? 'other') as String,
+        dir: (j['dir'] ?? '') as String,
         size: j['size'] as int?,
         subject: j['subject'] as String?,
         subjectSlug: j['subjectSlug'] as String?,
@@ -129,6 +132,7 @@ class AdminFile {
   final String contentType;
   final String subject;
   final String subjectSlug;
+  final String dir;
 
   AdminFile({
     required this.key,
@@ -140,6 +144,7 @@ class AdminFile {
     required this.contentType,
     required this.subject,
     required this.subjectSlug,
+    this.dir = '',
   });
 
   factory AdminFile.fromJson(Map<String, dynamic> json) {
@@ -155,6 +160,7 @@ class AdminFile {
       contentType: json['contentType'] as String? ?? '',
       subject: json['subject'] as String? ?? '',
       subjectSlug: json['subjectSlug'] as String? ?? '',
+      dir: json['dir'] as String? ?? '',
     );
   }
 }

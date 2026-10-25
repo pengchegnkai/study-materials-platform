@@ -46,7 +46,7 @@ class SubjectPage extends ConsumerWidget {
             );
           }
           final adminFiles = allFiles.map(_toAdminFile).toList();
-          final dirs = adminFiles.map((f) => f.dir).where((d) => d.isNotEmpty).toSet().toList();
+          final dirs = <String>[...{for (final f in adminFiles) if (f.dir.isNotEmpty) f.dir}];
           return FileManager(
             files: adminFiles,
             folders: dirs,
@@ -71,6 +71,7 @@ class SubjectPage extends ConsumerWidget {
       contentType: _contentTypeFromType(f.type),
       subject: f.subject ?? '',
       subjectSlug: f.subjectSlug ?? '',
+      dir: f.dir,
     );
   }
 

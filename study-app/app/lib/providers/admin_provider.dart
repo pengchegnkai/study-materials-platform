@@ -25,6 +25,7 @@ final adminFilesProvider = FutureProvider<List<AdminFile>>((ref) async {
             contentType: f.type,
             subject: f.subject ?? '',
             subjectSlug: f.subjectSlug ?? '',
+            dir: f.dir,
           ))
       .toList();
 });

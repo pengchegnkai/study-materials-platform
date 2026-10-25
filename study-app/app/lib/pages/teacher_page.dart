@@ -152,6 +152,7 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
         contentType: f.type,
         subject: f.subject ?? '',
         subjectSlug: f.subjectSlug ?? '',
+        dir: f.dir,
       );
 
   @override
