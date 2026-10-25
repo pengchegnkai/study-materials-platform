@@ -266,6 +266,16 @@ class _FilesTab extends ConsumerWidget {
           onToggleVisibility: (f) => ref.read(adminProvider).toggleFileVisibility(f.key, f.visibility == 'published' ? 'private' : 'published'),
           onRename: (f, newTitle) => ref.read(adminProvider).renameFile(f.key, newTitle),
           onCreateFolder: (path) => ref.read(adminProvider).createFolder(path),
+          onMoveCopy: (items, action, targetDir) async {
+            final notifier = ref.read(adminProvider);
+            for (final f in items) {
+              if (action == 'move') {
+                await notifier.moveFile(f.key, targetDir);
+              } else {
+                await notifier.copyFile(f.key, targetDir);
+              }
+            }
+          },
           canManage: true,
         ),
       ),

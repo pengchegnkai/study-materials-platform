@@ -10,10 +10,10 @@ import MarkdownIt from 'markdown-it';
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true });
 
-export type PreviewKind = 'markdown' | 'docx' | 'pptx' | 'excel' | 'image' | 'other';
+export type PreviewKind = 'markdown' | 'docx' | 'pptx' | 'excel' | 'pdf' | 'image' | 'other';
 
 export function kindFromType(type: string): PreviewKind {
-  if (type === 'markdown' || type === 'docx' || type === 'pptx' || type === 'excel' || type === 'image') return type;
+  if (type === 'markdown' || type === 'docx' || type === 'pptx' || type === 'excel' || type === 'pdf' || type === 'image') return type;
   return 'other';
 }
 
@@ -27,7 +27,8 @@ export async function renderPreview(
   kind: PreviewKind,
   buffer: ArrayBuffer,
   container: HTMLElement,
-  manifest?: ManifestFileMeta[]
+  manifest?: ManifestFileMeta[],
+  fileKey = ''
 ): Promise<void> {
   container.innerHTML = '';
 
@@ -85,6 +86,16 @@ export async function renderPreview(
     // 容器在构造函数传入；preview 只接收数据（库无 render 方法）
     const renderer = new Renderer(container);
     await renderer.preview(buffer);
+    return;
+  }
+
+  if (kind === 'pdf') {
+    // 浏览器内置 PDF 查看器（同源请求自动带凭证）
+    const frame = document.createElement('iframe');
+    frame.src = `/api/file?key=${encodeURIComponent(fileKey)}`;
+    frame.style.cssText = 'width:100%;height:100%;border:0;display:block;';
+    container.style.display = '';
+    container.appendChild(frame);
     return;
   }
 

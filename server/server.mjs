@@ -10,7 +10,7 @@ import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { DatabaseSync } from 'node:sqlite';
 import { webcrypto as crypto, createHmac, createHash, randomBytes } from 'node:crypto';
-import { readFileSync, existsSync, mkdirSync, createWriteStream, unlinkSync, statSync } from 'node:fs';
+import { readFileSync, existsSync, mkdirSync, createWriteStream, unlinkSync, statSync, renameSync, copyFileSync } from 'node:fs';
 import { createReadStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
@@ -360,11 +360,12 @@ function buildObjectKey(role, subjectSlug, username, filename, folderPath) {
   return `uploads/${sanitizeFilename(subjectSlug ?? 'misc')}/${encodeURIComponent(username)}/${dir ? dir + '/' : ''}${Date.now()}-${safe}`;
 }
 
-/// 从 key 提取虚拟目录（去掉 uploads/<role 或 slug>/<username>/ 前缀与文件名）
+/// 从 key 提取虚拟目录：admin 是 uploads/admin/<dir...>/file，teacher 是 uploads/<slug>/<user>/<dir...>/file
 function dirFromKey(key) {
   const parts = key.split('/');
-  if (parts.length <= 4) return ''; // uploads/<a>/<b>/filename
-  return parts.slice(3, -1).join('/');
+  if (parts.length <= 3) return '';
+  const start = parts[1] === 'admin' ? 2 : 3;
+  return parts.slice(start, -1).join('/');
 }
 
 function filePathOf(key) {
@@ -379,6 +380,7 @@ function extType(key, contentType) {
   if (['pptx', 'ppt'].includes(ext)) return 'pptx';
   if (['docx', 'doc'].includes(ext)) return 'docx';
   if (['xlsx', 'xls', 'csv'].includes(ext)) return 'excel';
+  if (ext === 'pdf') return 'pdf';
   if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(ext)) return 'image';
   if (contentType?.startsWith('image/')) return 'image';
   return 'other';
@@ -882,6 +884,195 @@ app.post('/api/folders', async (c) => {
 function __dirPrefix(parent) {
   return `uploads/%/${parent}/`;
 }
+
+// ---------- 文件/文件夹 移动与复制 ----------
+// 清洗目标目录：每段 sanitizeFilename，返回段数组
+function cleanDir(targetDir) {
+  return (targetDir || '')
+    .split('/')
+    .map((seg) => seg.trim())
+    .filter(Boolean) // 先剔空段，避免空串触发 sanitizeFilename 的 'file' 兜底
+    .map((seg) => sanitizeFilename(seg))
+    .filter(Boolean);
+}
+
+// 替换 key 的目录部分：admin 固定前缀 2 段（uploads/admin），teacher 3 段（uploads/<slug>/<user>）
+function rekey(key, newDirParts) {
+  const parts = key.split('/');
+  const keep = parts[1] === 'admin' ? 2 : 3;
+  return [...parts.slice(0, keep), ...newDirParts, parts[parts.length - 1]].join('/');
+}
+
+function userPrefixOf(key) {
+  return key.split('/').slice(0, 3).join('/') + '/';
+}
+
+async function requireFileOwner(c, user, key) {
+  const row = db.prepare('SELECT * FROM files WHERE key = ?').get(key);
+  if (!row) return { error: '文件不存在', status: 404 };
+  const isAdmin = user.roles.includes('admin');
+  const owner = row.uploader_id === user.sub || userPrefixOf(key) === `uploads/${encodeURIComponent(user.username)}/`;
+  if (!isAdmin && !owner) return { error: '无权限操作该文件', status: 403 };
+  return { row };
+}
+
+// POST /api/move {key?|folder?, targetDir}
+app.post('/api/move', async (c) => {
+  const user = await requireActive(c);
+  if (!user) return;
+  if (!user.roles.includes('admin') && !user.roles.includes('teacher')) return c.json({ error: '无权限' }, 403);
+  const body = await c.req.json().catch(() => ({}));
+  const targetDir = cleanDir(body.targetDir).join('/');
+
+  if (body.key) {
+    // 文件移动
+    const chk = await requireFileOwner(c, user, body.key);
+    if (chk.error) return c.json({ error: chk.error }, chk.status);
+    const newKey = rekey(chk.row.key, cleanDir(targetDir));
+    if (newKey === chk.row.key) return c.json({ ok: true, key: newKey });
+    const dup = db.prepare('SELECT 1 FROM files WHERE key = ?').get(newKey);
+    if (dup) return c.json({ error: '目标位置已存在同名文件' }, 409);
+    const oldFull = filePathOf(chk.row.key);
+    const newFull = filePathOf(newKey);
+    if (!oldFull || !newFull) return c.json({ error: '非法路径' }, 400);
+    if (!existsSync(oldFull)) return c.json({ error: '文件丢失' }, 404);
+    mkdirSync(path.dirname(newFull), { recursive: true });
+    renameSync(oldFull, newFull);
+    db.prepare('UPDATE files SET key = ? WHERE key = ?').run(newKey, chk.row.key);
+    return c.json({ ok: true, key: newKey });
+  }
+
+  if (body.folder) {
+    // 文件夹移动：folder（连同内容）放到 targetDir 下；按 dirFromKey 归属过滤
+    const folder = cleanDir(body.folder).join('/');
+    if (!folder) return c.json({ error: '缺少 folder' }, 400);
+    if (targetDir === folder || targetDir.startsWith(folder + '/')) {
+      return c.json({ error: '不能移动到自己的子目录' }, 400);
+    }
+    const isAdmin = user.roles.includes('admin');
+    const base = folder.split('/').pop();
+    const newBase = targetDir ? `${targetDir}/${base}` : base;
+    const rows = db.prepare('SELECT key FROM files').all().filter((r) => {
+      const d = dirFromKey(r.key);
+      if (d !== folder && !d.startsWith(folder + '/')) return false;
+      if (isAdmin) return true;
+      const parts = r.key.split('/');
+      return parts[1] !== 'admin' && parts[2] === encodeURIComponent(user.username);
+    });
+    for (const r of rows) {
+      const d = dirFromKey(r.key);
+      const relInFolder = d === folder ? '' : d.slice(folder.length + 1);
+      const newDir = [newBase, relInFolder].filter(Boolean).join('/');
+      const newKey = rekey(r.key, cleanDir(newDir));
+      if (newKey === r.key) continue;
+      // 目标已存在同名文件则跳过（不覆盖）
+      if (db.prepare('SELECT 1 FROM files WHERE key = ?').get(newKey)) continue;
+      const oldFull = filePathOf(r.key);
+      const newFull = filePathOf(newKey);
+      if (!oldFull || !newFull || !existsSync(oldFull)) continue;
+      mkdirSync(path.dirname(newFull), { recursive: true });
+      try { renameSync(oldFull, newFull); } catch { continue; }
+      db.prepare('UPDATE files SET key = ? WHERE key = ?').run(newKey, r.key);
+    }
+    // folders 表同步改前缀
+    const flds = db.prepare('SELECT id, path FROM folders').all();
+    for (const f of flds) {
+      if (f.path === folder || f.path.startsWith(folder + '/')) {
+        const newPath = newBase + f.path.slice(folder.length);
+        db.prepare('UPDATE folders SET path = ? WHERE id = ?').run(newPath, f.id);
+      }
+    }
+    return c.json({ ok: true, folder: newBase });
+  }
+  return c.json({ error: '缺少 key 或 folder' }, 400);
+});
+
+// POST /api/copy {key?|folder?, targetDir}
+app.post('/api/copy', async (c) => {
+  const user = await requireActive(c);
+  if (!user) return;
+  if (!user.roles.includes('admin') && !user.roles.includes('teacher')) return c.json({ error: '无权限' }, 403);
+  const body = await c.req.json().catch(() => ({}));
+  const targetDir = cleanDir(body.targetDir).join('/');
+
+  if (body.key) {
+    const chk = await requireFileOwner(c, user, body.key);
+    if (chk.error) return c.json({ error: chk.error }, chk.status);
+    const filename = chk.row.key.split('/').pop();
+    let newKey = rekey(chk.row.key, cleanDir(targetDir));
+    let n = 1;
+    const dot = filename.lastIndexOf('.');
+    const stem = dot > 0 ? filename.slice(0, dot) : filename;
+    const extPart = dot > 0 ? filename.slice(dot) : '';
+    while (db.prepare('SELECT 1 FROM files WHERE key = ?').get(newKey)) {
+      newKey = rekey(chk.row.key, [...cleanDir(targetDir), `${stem} (${n})${extPart}`]);
+      n++;
+    }
+    const oldFull = filePathOf(chk.row.key);
+    const newFull = filePathOf(newKey);
+    if (!oldFull || !newFull) return c.json({ error: '非法路径' }, 400);
+    if (!existsSync(oldFull)) return c.json({ error: '文件丢失' }, 404);
+    mkdirSync(path.dirname(newFull), { recursive: true });
+    copyFileSync(oldFull, newFull);
+    const stat = statSync(newFull);
+    db.prepare(
+      `INSERT INTO files (key, title, subject_id, uploader_id, uploader_username, visibility, uploaded_at, size, content_type)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(newKey, chk.row.title, chk.row.subject_id, user.sub, user.username, chk.row.visibility, Date.now(), stat.size, chk.row.content_type);
+    return c.json({ ok: true, key: newKey });
+  }
+
+  if (body.folder) {
+    const folder = cleanDir(body.folder).join('/');
+    if (!folder) return c.json({ error: '缺少 folder' }, 400);
+    const isAdmin = user.roles.includes('admin');
+    const base = folder.split('/').pop();
+    const newBase = targetDir ? `${targetDir}/${base} (副本)` : `${base} (副本)`;
+    const rows = db.prepare('SELECT * FROM files').all().filter((r) => {
+      const d = dirFromKey(r.key);
+      if (d !== folder && !d.startsWith(folder + '/')) return false;
+      if (isAdmin) return true;
+      const parts = r.key.split('/');
+      return parts[1] !== 'admin' && parts[2] === encodeURIComponent(user.username);
+    });
+    let copied = 0;
+    for (const r of rows) {
+      const d = dirFromKey(r.key);
+      const relInFolder = d === folder ? '' : d.slice(folder.length + 1);
+      const relFile = r.key.split('/').pop();
+      const newDir = [newBase, relInFolder].filter(Boolean).join('/');
+      const newKey = rekey(r.key, cleanDir(newDir));
+      if (db.prepare('SELECT 1 FROM files WHERE key = ?').get(newKey)) continue;
+      const oldFull = filePathOf(r.key);
+      const newFull = filePathOf(newKey);
+      if (!oldFull || !newFull || !existsSync(oldFull)) continue;
+      mkdirSync(path.dirname(newFull), { recursive: true });
+      try {
+        copyFileSync(oldFull, newFull);
+        const stat = statSync(newFull);
+        db.prepare(
+          `INSERT INTO files (key, title, subject_id, uploader_id, uploader_username, visibility, uploaded_at, size, content_type)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ).run(newKey, r.title ?? null, r.subject_id ?? null, user.sub, user.username, r.visibility ?? 'private', Date.now(), stat.size, r.content_type ?? null);
+        copied++;
+      } catch {}
+    }
+    // 复制子文件夹记录
+    const flds = db.prepare('SELECT id, path, subject_id FROM folders').all();
+    for (const f of flds) {
+      if (f.path === folder || f.path.startsWith(folder + '/')) {
+        const newPath = newBase + f.path.slice(folder.length);
+        const dup = db.prepare("SELECT 1 FROM folders WHERE IFNULL(subject_id, '') = IFNULL(?, '') AND path = ?").get(f.subject_id ?? null, newPath);
+        if (!dup) {
+          db.prepare('INSERT INTO folders (id, subject_id, path, created_by, created_at) VALUES (?, ?, ?, ?, ?)')
+            .run(rid('fld'), f.subject_id ?? null, newPath, user.username, Date.now());
+        }
+      }
+    }
+    return c.json({ ok: true, folder: newBase, copied });
+  }
+  return c.json({ error: '缺少 key 或 folder' }, 400);
+});
 
 // 修改自己的密码（错题本同款：验证旧密码，改后吊销全部 refresh token）
 app.post('/api/change-password', async (c) => {

@@ -8,6 +8,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:pdfx/pdfx.dart' as pdfx;
 import 'package:webview_flutter/webview_flutter.dart';
 import 'dart:io';
 import '../models/models.dart';
@@ -173,6 +174,8 @@ class _PreviewPageState extends State<PreviewPage> {
             code: const TextStyle(fontSize: 12, backgroundColor: Color(0xFFF3F4F6)),
           ),
         );
+      case 'pdf':
+        return _PdfViewer(bytes: bytes);
       case 'excel':
       case 'docx':
       case 'pptx':
@@ -199,6 +202,67 @@ class _PreviewPageState extends State<PreviewPage> {
           ),
         );
     }
+  }
+}
+
+// ---------- PDF 原生渲染 ----------
+class _PdfViewer extends StatefulWidget {
+  final Uint8List bytes;
+  const _PdfViewer({required this.bytes});
+
+  @override
+  State<_PdfViewer> createState() => _PdfViewerState();
+}
+
+class _PdfViewerState extends State<_PdfViewer> {
+  pdfx.PdfController? _controller;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    pdfx.PdfDocument.openData(widget.bytes).then((doc) {
+      if (mounted) setState(() => _controller = pdfx.PdfController(document: doc));
+    }).catchError((e) {
+      if (mounted) setState(() => _error = 'PDF 打开失败：$e');
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller?.document.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_error != null) {
+      return Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(_error!, textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13))));
+    }
+    final c = _controller;
+    if (c == null) return const Center(child: CircularProgressIndicator());
+    return Column(
+      children: [
+        Expanded(
+          child: pdfx.PdfView(
+            controller: c,
+            onDocumentError: (e) => setState(() => _error = '$e'),
+          ),
+        ),
+        SafeArea(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            child: pdfx.PdfPageNumber(
+              controller: c,
+              builder: (_, state, loading, pagesCount) => Text(
+                '${state ?? 1} / $pagesCount',
+                style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 

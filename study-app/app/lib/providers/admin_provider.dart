@@ -110,6 +110,16 @@ class AdminNotifier {
   }
 
   // ---------- 文件夹 ----------
+  Future<void> moveFile(String key, String targetDir) async {
+    await PlatformService().moveFile(key, targetDir);
+    ref.invalidate(adminFilesProvider);
+  }
+
+  Future<void> copyFile(String key, String targetDir) async {
+    await PlatformService().copyFile(key, targetDir);
+    ref.invalidate(adminFilesProvider);
+  }
+
   Future<void> createFolder(String path) async {
     await PlatformService().createFolder(path: path);
     ref.invalidate(adminFoldersProvider);

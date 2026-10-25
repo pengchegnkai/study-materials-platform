@@ -343,6 +343,25 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
                       }
                     },
                     onUpload: (dir) => _pickAndUpload(dir),
+                    onMoveCopy: (items, action, targetDir) async {
+                      var ok = 0, fail = 0;
+                      String? firstError;
+                      for (final f in items) {
+                        try {
+                          if (action == 'move') {
+                            await _svc.moveFile(f.key, targetDir);
+                          } else {
+                            await _svc.copyFile(f.key, targetDir);
+                          }
+                          ok++;
+                        } catch (e) {
+                          fail++;
+                          firstError ??= '$e'.replaceFirst('Exception: ', '');
+                        }
+                      }
+                      _loadFiles();
+                      _toast(fail == 0 ? '已${action == 'move' ? '移动' : '复制'} $ok 项' : '成功 $ok 项，失败 $fail 项：$firstError');
+                    },
                     canManage: true,
                   ),
           ),

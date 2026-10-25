@@ -385,6 +385,8 @@ function FilesTab() {
   const [folders, setFolders] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
+  const [dirPick, setDirPick] = useState<{ action: 'move' | 'copy'; f: AdminFile } | null>(null);
+  const [dirPickTarget, setDirPickTarget] = useState('');
 
   const load = useCallback(async () => {
     setFiles(null);
@@ -426,6 +428,19 @@ function FilesTab() {
       load();
     } catch (err: any) {
       toast(err.message || '创建失败', 'error');
+    }
+  };
+
+  const runMoveCopy = async () => {
+    if (!dirPick) return;
+    const body = { key: dirPick.f.key, targetDir: dirPickTarget.trim() };
+    try {
+      await apiPost(`/api/${dirPick.action}`, body);
+      toast(dirPick.action === 'move' ? '已移动' : '已复制', 'success');
+      setDirPick(null);
+      load();
+    } catch (err: any) {
+      toast(err.message || '操作失败', 'error');
     }
   };
 
@@ -537,7 +552,13 @@ function FilesTab() {
                       </Badge>
                     </td>
                     <td className="px-5 py-3 text-right whitespace-nowrap">
-                      <Button variant="ghost" size="sm" onClick={() => toggle(f)}>
+                      <Button variant="ghost" size="sm" onClick={() => { setDirPick({ action: 'move', f }); setDirPickTarget(currentDir); }}>
+                        移动
+                      </Button>
+                      <Button variant="ghost" size="sm" className="ml-1" onClick={() => { setDirPick({ action: 'copy', f }); setDirPickTarget(currentDir); }}>
+                        复制
+                      </Button>
+                      <Button variant="ghost" size="sm" className="ml-1" onClick={() => toggle(f)}>
                         {f.visibility === 'published' ? '取消开放' : '开放'}
                       </Button>
                       <Button variant="danger" size="sm" className="ml-1" onClick={() => remove(f)}>
@@ -562,6 +583,12 @@ function FilesTab() {
                   {f.subject ?? '—'} · {f.uploader}
                 </p>
                 <div className="mt-3 flex justify-end gap-1">
+                  <Button variant="ghost" size="sm" onClick={() => { setDirPick({ action: 'move', f }); setDirPickTarget(currentDir); }}>
+                    移动
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => { setDirPick({ action: 'copy', f }); setDirPickTarget(currentDir); }}>
+                    复制
+                  </Button>
                   <Button variant="ghost" size="sm" onClick={() => toggle(f)}>
                     {f.visibility === 'published' ? '取消开放' : '开放'}
                   </Button>
@@ -574,6 +601,34 @@ function FilesTab() {
           </div>
         </div>
       )}
+
+      {/* 移动/复制目标目录选择 */}
+      <Modal open={!!dirPick} title={dirPick?.action === 'move' ? '移动文件' : '复制文件'} onClose={() => setDirPick(null)}>
+        <p className="text-[13px] text-ink-secondary dark:text-gray-400 mb-3">
+          目标文件：{dirPick?.f.title}
+        </p>
+        <label className="block text-[12px] text-ink-secondary dark:text-gray-400 mb-1.5">目标目录（留空为根目录）</label>
+        <select
+          value={subFolders.includes(dirPickTarget.split('/').pop() ?? '') || dirPickTarget === currentDir ? '' : dirPickTarget}
+          onChange={(e) => setDirPickTarget(e.target.value)}
+          className="w-full h-10 px-3 rounded-btn border border-line dark:border-gray-700 bg-white dark:bg-gray-900 text-[14px] mb-2"
+        >
+          <option value="">（根目录）</option>
+          {folders.map((f) => (
+            <option key={f} value={f}>{f}</option>
+          ))}
+        </select>
+        <input
+          value={dirPickTarget}
+          onChange={(e) => setDirPickTarget(e.target.value)}
+          placeholder="或手动输入路径，如 第一章/课件"
+          className="w-full h-10 px-3 rounded-btn border border-line dark:border-gray-700 bg-white dark:bg-gray-900 text-[13px]"
+        />
+        <div className="mt-6 flex justify-end gap-2">
+          <Button variant="secondary" onClick={() => setDirPick(null)}>取消</Button>
+          <Button onClick={runMoveCopy}>{dirPick?.action === 'move' ? '移动' : '复制'}</Button>
+        </div>
+      </Modal>
     </div>
   );
 }

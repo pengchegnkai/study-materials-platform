@@ -89,6 +89,18 @@ class PlatformService {
     await _dio.post('/folders', data: {if (subjectId != null) 'subjectId': subjectId, 'path': path});
   }
 
+  // ---------- 移动/复制 ----------
+
+  Future<void> moveFile(String key, String targetDir) async {
+    _ensure();
+    await _dio.post('/move', data: {'key': key, 'targetDir': targetDir});
+  }
+
+  Future<void> copyFile(String key, String targetDir) async {
+    _ensure();
+    await _dio.post('/copy', data: {'key': key, 'targetDir': targetDir});
+  }
+
   // ---------- 文件 ----------
 
   Future<List<FileItem>> manifest() async {

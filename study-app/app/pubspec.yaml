@@ -31,6 +31,8 @@ dependencies:
   fast_gbk: ^1.0.0
   # Office 完整渲染：WebView 加载网页端同款 JS 渲染库
   webview_flutter: ^4.7.0
+  # PDF 原生渲染
+  pdfx: ^2.6.0
   path_provider: ^2.1.1
   # 图片查看
   photo_view: ^0.15.0

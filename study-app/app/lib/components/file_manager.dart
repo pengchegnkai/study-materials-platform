@@ -20,6 +20,8 @@ class FileManager extends ConsumerStatefulWidget {
   final Future<void> Function(String path)? onCreateFolder;
   /// 上传到指定目录，null 则隐藏入口
   final Future<void> Function(String dir)? onUpload;
+  /// 移动/复制选中项到目标目录（单选或批量）
+  final Future<void> Function(List<AdminFile> items, String action, String targetDir)? onMoveCopy;
 
   const FileManager({
     super.key,
@@ -31,6 +33,7 @@ class FileManager extends ConsumerStatefulWidget {
     this.folders = const [],
     this.onCreateFolder,
     this.onUpload,
+    this.onMoveCopy,
   });
 
   @override
@@ -352,6 +355,18 @@ class _FileManagerState extends ConsumerState<FileManager> {
           if (selectedCount > 0) ...[
             Text('已选 $selectedCount 项', style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.primary)),
             const SizedBox(width: 8),
+            if (widget.canManage && widget.onMoveCopy != null) ...[
+              IconButton(
+                icon: const Icon(Icons.drive_file_move_outline, size: 20),
+                tooltip: '移动到…',
+                onPressed: () => _moveOrCopySelected('move'),
+              ),
+              IconButton(
+                icon: const Icon(Icons.copy_all_outlined, size: 20),
+                tooltip: '复制到…',
+                onPressed: () => _moveOrCopySelected('copy'),
+              ),
+            ],
             if (widget.canManage)
               FilledButton.icon(
                 icon: const Icon(Icons.delete_outline, size: 16),
@@ -368,6 +383,60 @@ class _FileManagerState extends ConsumerState<FileManager> {
               tristate: selectedCount > 0 && !allSelected,
               onChanged: (_) => _selectAll(),
             ),
+        ],
+      ),
+    );
+  }
+
+  /// 选中文件移动/复制到目标目录
+  Future<void> _moveOrCopySelected(String action) async {
+    if (_selectedKeys.isEmpty || widget.onMoveCopy == null) return;
+    final target = await _pickTargetDir();
+    if (target == null) return;
+    final items = widget.files.where((f) => _selectedKeys.contains(f.key)).toList();
+    try {
+      await widget.onMoveCopy!(items, action, target);
+      setState(() => _selectedKeys.clear());
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('$e'.replaceFirst('Exception: ', '')),
+          backgroundColor: Colors.red,
+        ));
+      }
+    }
+  }
+
+  Future<String?> _pickTargetDir() async {
+    final ctrl = TextEditingController(text: _currentPath);
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('选择目标目录'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (widget.folders.isNotEmpty)
+              SizedBox(
+                height: 160,
+                child: ListView(
+                  children: [
+                    ListTile(dense: true, leading: const Icon(Icons.folder_off_outlined, size: 18), title: const Text('（根目录）'), onTap: () { ctrl.text = ''; Navigator.pop(ctx, ''); }),
+                    for (final f in widget.folders)
+                      ListTile(dense: true, leading: const Icon(Icons.folder_outlined, size: 18), title: Text(f), onTap: () => Navigator.pop(ctx, f)),
+                  ],
+                ),
+              )
+            else
+              const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Text('暂无其他目录', style: TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)))),
+            const SizedBox(height: 8),
+            TextField(controller: ctrl, decoration: const InputDecoration(labelText: '或手动输入路径'), style: const TextStyle(fontSize: 13)),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, ctrl.text.trim()), child: const Text('确定')),
         ],
       ),
     );
