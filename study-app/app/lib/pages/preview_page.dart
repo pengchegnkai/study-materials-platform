@@ -1,5 +1,6 @@
 /// pages/preview_page.dart —— 预览：Markdown 渲染；图片缩放；Excel 表格；Word/PPT 文本提取；其余分享
 import 'dart:convert';
+import 'package:fast_gbk/fast_gbk.dart';
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';

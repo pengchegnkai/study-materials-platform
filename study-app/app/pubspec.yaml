@@ -27,6 +27,8 @@ dependencies:
   # Office 预览：xlsx 表格解析 + zip 解包（docx/pptx 文本提取）
   spreadsheet_decoder: ^2.3.0
   archive: ^3.6.1
+  # GBK 编码回退（中文 md/txt 常见 GBK 编码）
+  fast_gbk: ^1.0.0
   # Office 完整渲染：WebView 加载网页端同款 JS 渲染库
   webview_flutter: ^4.7.0
   path_provider: ^2.1.1
