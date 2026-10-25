@@ -48,12 +48,13 @@ jobs:
           # 5) 固定签名：把仓库内的固定 keystore 放到 debug 签名位置，保证每次构建签名一致（防覆盖安装冲突）
           mkdir -p ~/.android
           base64 -d android/debug.keystore.b64 > ~/.android/debug.keystore
-          # 3) 覆盖 AndroidManifest（权限 + 网络安全策略 + 中文应用名）
+          # 3) 覆盖 AndroidManifest（权限 + 网络安全策略 + 中文应用名 + 应用图标）
           cp android/app/src/main/AndroidManifest.xml \
              build_tmp/android/app/src/main/AndroidManifest.xml
           mkdir -p build_tmp/android/app/src/main/res/xml
           cp android/app/src/main/res/xml/network_security_config.xml \
              build_tmp/android/app/src/main/res/xml/network_security_config.xml
+          cp -r android/res-icons/* build_tmp/android/app/src/main/res/
           # 4) minSdk 24 / compileSdk 36 / targetSdk 36（file_picker 8.x 要求 compileSdk>=36）
           python3 ci/patch_sdk_versions.py build_tmp/android/app
           # 5) 关闭 R8 混淆（个人应用换取构建稳定）

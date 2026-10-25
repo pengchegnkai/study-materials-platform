@@ -2,7 +2,7 @@
     <!-- 网络访问：连接学习资料平台（局域网/公网） -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <application
-        android:label="学习资料"
+        android:label="班级资料共享"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="false"
