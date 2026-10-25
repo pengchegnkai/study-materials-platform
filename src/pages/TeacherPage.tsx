@@ -41,6 +41,7 @@ export default function TeacherPage() {
   const [editTitle, setEditTitle] = useState('');
   const [uploadSubject, setUploadSubject] = useState('');
   const [uploadVisibility, setUploadVisibility] = useState('private');
+  const [progress, setProgress] = useState<{ current: number; total: number; pct: number } | null>(null);
 
   const mySubjects = useMemo(() => subjects, [subjects]);
 
@@ -64,27 +65,43 @@ export default function TeacherPage() {
     loadFiles();
   }, [loadSubjects, loadFiles]);
 
-  const upload = async (fileList: File[]) => {
+  const upload = async (fileList: File[], dir?: string) => {
     if (!uploadSubject) {
       toast('请先选择要上传到的科目', 'warning');
       return;
     }
     setUploading(true);
-    try {
-      for (const file of fileList) {
+    let ok = 0;
+    let fail = 0;
+    let firstError = '';
+    for (let i = 0; i < fileList.length; i++) {
+      const file = fileList[i];
+      // 相对路径：文件夹上传时保留目录结构（含所选根文件夹名）
+      const rel = (file as any).webkitRelativePath as string | undefined;
+      const subDir =
+        dir ??
+        (rel && rel.includes('/') ? rel.split('/').slice(0, -1).join('/') : '');
+      setProgress({ current: i + 1, total: fileList.length, pct: 0 });
+      try {
         const form = new FormData();
         form.append('file', file);
         form.append('subjectId', uploadSubject);
         form.append('visibility', uploadVisibility);
-        await apiUpload('/api/upload', form);
+        form.append('path', subDir);
+        const d = await apiUpload<{ key: string }>('/api/upload', form, (pct) =>
+          setProgress({ current: i + 1, total: fileList.length, pct })
+        );
+        if (d?.key) ok++;
+        else fail++;
+      } catch (err: any) {
+        fail++;
+        firstError = firstError || err.message || '上传失败';
       }
-      toast(`已上传 ${fileList.length} 个文件`, 'success');
-      loadFiles();
-    } catch (err: any) {
-      toast(err.message || '上传失败', 'error');
-    } finally {
-      setUploading(false);
     }
+    toast(fail === 0 ? `已上传 ${ok} 个文件` : `成功 ${ok} 个，失败 ${fail} 个：${firstError}`, fail === 0 ? 'success' : 'error');
+    setProgress(null);
+    setUploading(false);
+    loadFiles();
   };
 
   const toggleVisibility = async (f: TeacherFile, published: boolean) => {
@@ -130,6 +147,9 @@ export default function TeacherPage() {
     }
   };
 
+  const fileListName = (p: { current: number; total: number }) =>
+    p.total > 1 ? `第 ${p.current} 个文件` : '文件';
+
   const visibleFiles = (files ?? []).filter((f) => {
     if (selectedSubject && f.subject !== mySubjects.find((s) => s.id === selectedSubject)?.name) return false;
     if (publishedOnly === 'published' && f.visibility !== 'published') return false;
@@ -158,7 +178,24 @@ export default function TeacherPage() {
             <option value="published">开放（学生可见）</option>
           </Select>
         </div>
-        <UploadZone onFiles={upload} disabled={uploading} />
+        <UploadZone onFiles={upload} onFolder={(files) => upload(files)} disabled={uploading}>
+          {progress && (
+            <div className="w-full mt-4">
+              <div className="flex items-center justify-between text-[12px] text-ink-secondary dark:text-gray-400 mb-1">
+                <span>
+                  上传中 {progress.current}/{progress.total} · {fileListName(progress)}
+                </span>
+                <span className="tabular-nums">{progress.pct}%</span>
+              </div>
+              <div className="h-2 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
+                <div
+                  className="h-full bg-primary dark:bg-indigo-500 transition-all duration-150 ease-out"
+                  style={{ width: `${progress.pct}%` }}
+                />
+              </div>
+            </div>
+          )}
+        </UploadZone>
       </div>
 
       {/* 我的文件 */}

@@ -37,7 +37,7 @@ export default function PreviewPage() {
 
       const container = containerRef.current;
       if (!container) return;
-      await renderPreview(kindFromType(file.type), buffer, container);
+      await renderPreview(kindFromType(file.type), buffer, container, manifest.files);
       setStatus('ready');
     } catch {
       setStatus('error');

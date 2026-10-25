@@ -123,6 +123,7 @@ class PlatformService {
     required String subjectId,
     required String visibility,
     String dir = '',
+    void Function(int sent, int total)? onProgress,
   }) async {
     _ensure();
     try {
@@ -133,7 +134,11 @@ class PlatformService {
         MapEntry('visibility', visibility),
         MapEntry('path', dir),
       ]);
-      final resp = await _dio.post('/upload', data: form);
+      final resp = await _dio.post(
+        '/upload',
+        data: form,
+        onSendProgress: onProgress,
+      );
       return UploadResult(ok: true, key: resp.data['key'] as String?);
     } on DioException catch (e) {
       return UploadResult(ok: false, error: _err(e));

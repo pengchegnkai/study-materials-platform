@@ -25,6 +25,7 @@ class _PreviewPageState extends State<PreviewPage> {
   Uint8List? _bytes;
   String? _error;
   bool _loading = true;
+  List<FileItem> _manifestFiles = [];
 
   @override
   void initState() {
@@ -34,18 +35,79 @@ class _PreviewPageState extends State<PreviewPage> {
 
   Future<void> _load() async {
     try {
+      // manifest 用于 Markdown 图片引用解析（同目录文件名 → key）
+      final manifestResp = await _svc.manifest().catchError((_) => <FileItem>[]);
+      if (mounted) setState(() => _manifestFiles = manifestResp);
       final resp = await _svc.fileBytes(widget.fileKey);
+      if (!mounted) return;
       setState(() {
         _bytes = Uint8List.fromList(resp.data ?? []);
         _loading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = '$e'.replaceFirst('Exception: ', '');
         _loading = false;
       });
     }
   }
+
+  /// Markdown 图片引用：src 的文件名在同目录（其次全局）匹配 manifest key，
+  /// 用带 Bearer 的 fileBytes 拉取字节渲染；外链 http(s) 直接网络加载。
+  Widget _mdImage(Uri uri) {
+    final src = uri.toString();
+    if (src.startsWith('http://') || src.startsWith('https://')) {
+      return Image.network(src, errorBuilder: (_, __, ___) => _imgPlaceholder());
+    }
+    final baseName = src.replaceFirst('./', '').split('/').last;
+    final keys = _manifestFiles.map((f) => f.key).toList();
+    final curDir = widget.fileKey.contains('/')
+        ? widget.fileKey.substring(0, widget.fileKey.lastIndexOf('/'))
+        : '';
+    String? hit;
+    for (final k in keys) {
+      if (k.split('/').last == baseName &&
+          (k.contains('/') ? k.substring(0, k.lastIndexOf('/')) : '') == curDir) {
+        hit = k;
+        break;
+      }
+    }
+    hit ??= () {
+      for (final k in keys) {
+        if (k.split('/').last == baseName) return k;
+      }
+      return null;
+    }();
+    if (hit == null) return _imgPlaceholder();
+    return FutureBuilder<Response<List<int>>>(
+      future: _svc.fileBytes(hit),
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return const SizedBox(
+              width: 120, height: 80, child: Center(child: CircularProgressIndicator(strokeWidth: 2)));
+        }
+        if (snap.hasError || snap.data?.data == null) return _imgPlaceholder();
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Image.memory(
+            Uint8List.fromList(snap.data!.data!),
+            fit: BoxFit.contain,
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _imgPlaceholder() => Container(
+        width: 120,
+        height: 80,
+        decoration: BoxDecoration(
+          color: const Color(0xFFF3F4F6),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Icon(Icons.broken_image_outlined, color: Color(0xFF9CA3AF)),
+      );
 
   Future<void> _share() async {
     final dir = await getTemporaryDirectory();
@@ -88,6 +150,10 @@ class _PreviewPageState extends State<PreviewPage> {
         return Markdown(
           data: text,
           selectable: true,
+          imageBuilder: (uri, title, alt) => Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: _mdImage(uri),
+          ),
           padding: const EdgeInsets.all(20),
           styleSheet: MarkdownStyleSheet(
             h1: const TextStyle(fontSize: 22, fontWeight: FontWeight.w600, height: 1.3),

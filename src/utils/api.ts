@@ -49,13 +49,27 @@ export async function apiDelete<T = any>(path: string): Promise<T> {
   return handle(resp);
 }
 
-export async function apiUpload<T = any>(path: string, form: FormData): Promise<T> {
-  let resp: Response;
-  try {
-    resp = await fetch(path, { method: 'POST', credentials: 'include', body: form });
-  } catch (err: any) {
-    // 网络层失败（断连/被重置/超时），与 HTTP 状态码错误区分开
-    throw new ApiError(`网络连接失败：${err?.message || '无法连接服务器'}`, 0);
-  }
-  return handle(resp);
+export function apiUpload<T = any>(
+  path: string,
+  form: FormData,
+  onProgress?: (pct: number) => void
+): Promise<T> {
+  // fetch 不支持上传进度，改用 XHR 的 upload.onprogress
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', path);
+    xhr.withCredentials = true;
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () => {
+      let data: any = {};
+      try { data = JSON.parse(xhr.responseText); } catch {}
+      if (xhr.status === 401) reject(new ApiError('未登录', 401));
+      else if (xhr.status >= 400) reject(new ApiError((data as any).error || `请求失败 (${xhr.status})`, xhr.status));
+      else resolve(data as T);
+    };
+    xhr.onerror = () => reject(new ApiError('网络连接失败：无法连接服务器', 0));
+    xhr.send(form);
+  });
 }

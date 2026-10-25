@@ -23,6 +23,7 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
   String _visibility = 'private';
   bool _uploading = false;
   bool _loadingFiles = true;
+  ({int current, int total, int pct, String name})? _progress;
   List<FileItem> _myFiles = [];
   List<String> _folders = [];
 
@@ -54,10 +55,9 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
     }
   }
 
-  Future<void> _pickAndUpload([String dir = '']) async {
+  Future<List<Subject>?> _pickSubject() async {
     final subjects = await _svc.subjects();
-    if (!mounted) return;
-
+    if (!mounted) return null;
     String? subjectId;
     await showDialog(
       context: context,
@@ -74,23 +74,35 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
             .toList(),
       ),
     );
-    if (subjectId == null || !mounted) return;
+    if (subjectId == null) return null;
+    return subjects.where((s) => s.id == subjectId).toList();
+  }
 
-    final result = await FilePicker.platform.pickFiles(allowMultiple: true);
-    if (result == null || result.files.isEmpty || !mounted) return;
-
+  /// 上传一批文件，dir 为服务器虚拟目录；带逐文件与单文件进度
+  Future<void> _uploadFiles(
+    List<({File file, String filename, String dir})> items,
+    String subjectId,
+  ) async {
     setState(() => _uploading = true);
     var ok = 0, fail = 0;
     String? firstError;
-    for (final pf in result.files) {
-      final path = pf.path;
-      if (path == null) continue;
+    for (var i = 0; i < items.length; i++) {
+      final item = items[i];
+      var filePct = 0;
+      setState(() => _progress = (current: i + 1, total: items.length, pct: 0, name: item.filename));
       final r = await _svc.upload(
-        file: File(path),
-        filename: pf.name,
-        subjectId: subjectId!,
+        file: item.file,
+        filename: item.filename,
+        subjectId: subjectId,
         visibility: _visibility,
-        dir: dir,
+        dir: item.dir,
+        onProgress: (sent, total) {
+          final pct = total > 0 ? (sent * 100 ~/ total) : 0;
+          if (pct != filePct && mounted) {
+            filePct = pct;
+            setState(() => _progress = (current: i + 1, total: items.length, pct: pct, name: item.filename));
+          }
+        },
       );
       if (r.ok) {
         ok++;
@@ -100,12 +112,59 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
       }
     }
     if (!mounted) return;
-    setState(() => _uploading = false);
+    setState(() {
+      _uploading = false;
+      _progress = null;
+    });
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(fail == 0 ? '已上传 $ok 个文件' : '成功 $ok 个，失败 $fail 个：$firstError'),
       backgroundColor: fail == 0 ? const Color(0xFF059669) : Colors.red,
     ));
     _loadFiles();
+  }
+
+  /// 多选文件上传
+  Future<void> _pickAndUpload([String dir = '']) async {
+    final subjects = await _pickSubject();
+    if (subjects == null || subjects.isEmpty || !mounted) return;
+    final subjectId = subjects.first.id;
+
+    final result = await FilePicker.platform.pickFiles(allowMultiple: true);
+    if (result == null || result.files.isEmpty || !mounted) return;
+
+    final items = <({File file, String filename, String dir})>[];
+    for (final pf in result.files) {
+      final path = pf.path;
+      if (path == null) continue;
+      items.add((file: File(path), filename: pf.name, dir: dir));
+    }
+    if (items.isEmpty) return;
+    await _uploadFiles(items, subjectId);
+  }
+
+  /// 选择整个文件夹，递归上传（保留目录结构，根文件夹名作为顶层目录）
+  Future<void> _pickFolderAndUpload() async {
+    final subjects = await _pickSubject();
+    if (subjects == null || subjects.isEmpty || !mounted) return;
+    final subjectId = subjects.first.id;
+
+    final dirPath = await FilePicker.platform.getDirectoryPath();
+    if (dirPath == null || !mounted) return;
+
+    final root = Directory(dirPath);
+    final rootName = dirPath.split('/').where((s) => s.isNotEmpty).last;
+    final items = <({File file, String filename, String dir})>[];
+    await for (final entity in root.list(recursive: true, followLinks: false)) {
+      if (entity is! File) continue;
+      if (entity.path.split('/').last.startsWith('.')) continue; // 跳过隐藏文件
+      final rel = entity.path.substring(root.path.length + 1); // 相对所选目录
+      items.add((file: entity, filename: entity.path.split('/').last, dir: '$rootName/${rel.split('/').take(rel.split('/').length - 1).join('/')}'));
+    }
+    if (items.isEmpty) {
+      _toast('所选文件夹内没有文件');
+      return;
+    }
+    await _uploadFiles(items, subjectId);
   }
 
   Future<void> _toggleVisibility(AdminFile f) async {
@@ -215,13 +274,56 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
                               height: 16,
                               child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                           : const Icon(Icons.upload_file_outlined, size: 18),
-                      label: Text(_uploading ? '上传中…' : '上传'),
+                      label: Text(_uploading ? '上传中…' : '上传文件'),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: _uploading ? null : _pickFolderAndUpload,
+                      icon: const Icon(Icons.folder_open_outlined, size: 18),
+                      label: const Text('上传文件夹'),
                     ),
                   ],
                 ),
               ),
             ),
           ),
+          if (_progress != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '上传中 ${_progress!.current}/${_progress!.total} · ${_progress!.name}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text('${_progress!.pct}%', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: _progress!.pct / 100,
+                          minHeight: 6,
+                          backgroundColor: const Color(0xFFE5E7EB),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           // 资源管理器风格的文件列表
           Expanded(
             child: _loadingFiles

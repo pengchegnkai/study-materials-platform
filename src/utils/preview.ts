@@ -17,15 +17,31 @@ export function kindFromType(type: string): PreviewKind {
   return 'other';
 }
 
+export interface ManifestFileMeta {
+  key: string;
+  title: string;
+  type: string;
+}
+
 export async function renderPreview(
   kind: PreviewKind,
   buffer: ArrayBuffer,
-  container: HTMLElement
+  container: HTMLElement,
+  manifest?: ManifestFileMeta[]
 ): Promise<void> {
   container.innerHTML = '';
 
   if (kind === 'markdown') {
-    const text = new TextDecoder().decode(buffer);
+    let text = new TextDecoder().decode(buffer);
+    // 图片引用解析：相对路径 src → 在同科目 manifest 里按文件名匹配 key → /api/file?key=
+    if (manifest && manifest.length > 0) {
+      text = text.replace(/(!\[[^\]]*\]\()([^)\s]+)(\s+"[^"]*")?\)/g, (whole, pre, src, post) => {
+        const clean = decodeURIComponent(src.replace(/^\.\//, '').split('/').pop() || '');
+        if (!clean || /^(https?:|data:)/.test(src)) return whole;
+        const hit = manifest.find((f) => (f.key.split('/').pop() || '') === clean);
+        return hit ? `${pre}/api/file?key=${encodeURIComponent(hit.key)}${post ?? ''})` : whole;
+      });
+    }
     const el = document.createElement('div');
     el.className = 'markdown-body';
     el.innerHTML = md.render(text);
