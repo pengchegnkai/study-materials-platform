@@ -48,6 +48,15 @@ db.exec(`CREATE TABLE IF NOT EXISTS refresh_tokens (
   expires_at INTEGER NOT NULL,
   created_at INTEGER NOT NULL
 )`);
+// 虚拟文件夹（文件 key 隐含目录之外，允许空文件夹存在）
+db.exec(`CREATE TABLE IF NOT EXISTS folders (
+  id TEXT PRIMARY KEY,
+  subject_id TEXT,
+  path TEXT NOT NULL,
+  created_by TEXT,
+  created_at INTEGER NOT NULL,
+  UNIQUE(subject_id, path)
+)`);
 
 // ---------- 环境变量管理员落库 ----------
 // files.uploader_id 外键指向 users(id)；env 管理员（env-admin）必须存在于 users 表，
@@ -340,10 +349,22 @@ function sanitizeFilename(name) {
   return base.replace(/[\u0000-\u001F\u007F]/g, '').replace(/\.\.+/g, '.').replace(/\s+/g, ' ').trim() || 'file';
 }
 
-function buildObjectKey(role, subjectSlug, username, filename) {
+function buildObjectKey(role, subjectSlug, username, filename, folderPath) {
   const safe = sanitizeFilename(filename);
-  if (role === 'admin') return `uploads/admin/${Date.now()}-${safe}`;
-  return `uploads/${sanitizeFilename(subjectSlug ?? 'misc')}/${encodeURIComponent(username)}/${Date.now()}-${safe}`;
+  const dir = (folderPath || '')
+    .split('/')
+    .map((s) => sanitizeFilename(s.trim()))
+    .filter(Boolean)
+    .join('/');
+  if (role === 'admin') return `uploads/admin/${dir ? dir + '/' : ''}${Date.now()}-${safe}`;
+  return `uploads/${sanitizeFilename(subjectSlug ?? 'misc')}/${encodeURIComponent(username)}/${dir ? dir + '/' : ''}${Date.now()}-${safe}`;
+}
+
+/// 从 key 提取虚拟目录（去掉 uploads/<role 或 slug>/<username>/ 前缀与文件名）
+function dirFromKey(key) {
+  const parts = key.split('/');
+  if (parts.length <= 4) return ''; // uploads/<a>/<b>/filename
+  return parts.slice(3, -1).join('/');
 }
 
 function filePathOf(key) {
@@ -459,6 +480,7 @@ app.get('/api/manifest', async (c) => {
       key: row.key,
       title: row.title || row.key.split('/').pop(),
       type: extType(row.key, row.content_type),
+      dir: dirFromKey(row.key),
       size: row.size,
       subject: row.subject_name,
       subjectSlug: row.subject_slug,
@@ -506,6 +528,7 @@ app.post('/api/upload', async (c) => {
   const file = form.get('file');
   const subjectId = (form.get('subjectId') || '') + '';
   const visibility = (form.get('visibility') || 'private') + '';
+  const folderPath = (form.get('path') || '') + '';
 
   if (!file || typeof file === 'string' || file.size === 0) return c.json({ error: '缺少文件' }, 400);
   if (!['private', 'published'].includes(visibility)) return c.json({ error: 'visibility 取值非法' }, 400);
@@ -527,7 +550,7 @@ app.post('/api/upload', async (c) => {
     subjectSlug = s.slug; subjectName = s.name;
   }
 
-  const key = buildObjectKey(isAdmin ? 'admin' : 'teacher', subjectSlug, user.username, file.name || 'file');
+  const key = buildObjectKey(isAdmin ? 'admin' : 'teacher', subjectSlug, user.username, file.name || 'file', folderPath);
   const full = filePathOf(key);
   if (!full) return c.json({ error: '非法路径' }, 400);
   mkdirSync(path.dirname(full), { recursive: true });
@@ -638,13 +661,14 @@ app.post('/api/admin/users/batch', async (c) => {
     if (seen.has(username)) { failed.push({ username, reason: '批内用户名重复' }); continue; }
     if (existing.has(username)) { failed.push({ username, reason: '用户名已存在' }); continue; }
     if (!u.roleIds?.length) { failed.push({ username, reason: '未分配角色' }); continue; }
+    if (u.password && String(u.password).length < 6) { failed.push({ username, reason: '自定义密码至少 6 位' }); continue; }
     seen.add(username);
   }
 
   for (const u of users) {
     const username = (u.username || '').trim();
     if (!username || failed.some((f) => f.username === username)) continue;
-    const password = randomPassword();
+    const password = (u.password && String(u.password).length >= 6) ? String(u.password) : randomPassword();
     const id = rid('user');
     db.exec('BEGIN');
     try {
@@ -800,6 +824,79 @@ app.get('/api/admin/dashboard', async (c) => {
       roles: r.roles ? r.roles.split(',') : [],
     })),
   });
+});
+
+// 文件夹：列出（folders 表 + 文件 key 隐含目录合并）
+app.get('/api/folders', async (c) => {
+  const user = await requireLogin(c);
+  if (!user) return;
+  const subjectId = c.req.query('subjectId') || null;
+  const set = new Set();
+  if (subjectId) {
+    for (const r of db.prepare('SELECT path FROM folders WHERE subject_id = ?').all(subjectId)) set.add(r.path);
+  } else {
+    for (const r of db.prepare('SELECT path FROM folders').all()) set.add(r.path);
+  }
+  // 从文件 key 提取隐含目录
+  const rows = db.prepare('SELECT key FROM files').all();
+  for (const r of rows) {
+    if (subjectId) {
+      const f = db.prepare('SELECT subject_id FROM files WHERE key = ?').get(r.key);
+      if (f?.subject_id !== subjectId) continue;
+    }
+    const dir = dirFromKey(r.key);
+    if (dir) set.add(dir);
+  }
+  return c.json({ folders: Array.from(set).sort() });
+});
+
+// 文件夹：新建（父目录必须已存在或为根）
+app.post('/api/folders', async (c) => {
+  const user = await requireActive(c);
+  if (!user) return;
+  if (!user.roles.includes('admin') && !user.roles.includes('teacher')) return c.json({ error: '无权限' }, 403);
+  const body = await c.req.json().catch(() => ({}));
+  const subjectId = body.subjectId || null;
+  const path = (body.path || '')
+    .split('/')
+    .map((s) => sanitizeFilename(s.trim()))
+    .filter(Boolean)
+    .join('/');
+  if (!path) return c.json({ error: '文件夹名不能为空' }, 400);
+  // 父目录校验
+  const parts = path.split('/');
+  if (parts.length > 1) {
+    const parent = parts.slice(0, -1).join('/');
+    const existsAsFolder = db.prepare("SELECT 1 FROM folders WHERE IFNULL(subject_id, '') = IFNULL(?, '') AND path = ?").get(subjectId, parent);
+    const existsAsDir = db.prepare('SELECT key FROM files WHERE key LIKE ? LIMIT 1').get(`${__dirPrefix(parent)}%`);
+    if (!existsAsFolder && !existsAsDir) return c.json({ error: '父文件夹不存在' }, 400);
+  }
+  const dup = db.prepare("SELECT 1 FROM folders WHERE IFNULL(subject_id, '') = IFNULL(?, '') AND path = ?").get(subjectId, path);
+  if (dup) return c.json({ error: '文件夹已存在' }, 409);
+  db.prepare('INSERT INTO folders (id, subject_id, path, created_by, created_at) VALUES (?, ?, ?, ?, ?)')
+    .run(rid('fld'), subjectId, path, user.username, Date.now());
+  return c.json({ ok: true, path });
+});
+
+// 把父目录转成 key 前缀（用于存在性探测）：uploads/*/dir/...
+function __dirPrefix(parent) {
+  return `uploads/%/${parent}/`;
+}
+
+// 修改自己的密码（错题本同款：验证旧密码，改后吊销全部 refresh token）
+app.post('/api/change-password', async (c) => {
+  const user = await requireActive(c);
+  if (!user) return;
+  const body = await c.req.json().catch(() => ({}));
+  const oldPassword = body.oldPassword || '';
+  const newPassword = body.newPassword || '';
+  if (newPassword.length < 6) return c.json({ error: '新密码至少 6 位' }, 400);
+  const row = db.prepare('SELECT id, username, password_hash FROM users WHERE id = ?').get(user.sub);
+  if (!row) return c.json({ error: '用户不存在' }, 404);
+  if (!(await verifyPassword(oldPassword, row.password_hash))) return c.json({ error: '旧密码错误' }, 401);
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(await hashPassword(newPassword), row.id);
+  db.prepare('UPDATE refresh_tokens SET revoked = 1 WHERE user_id = ?').run(row.id);
+  return c.json({ ok: true, message: '密码已修改，其他设备已下线' });
 });
 
 // 科目管理：删除有文件引用返回 409

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   BookOpen,
   Copy,
@@ -14,6 +14,10 @@ import {
   Presentation,
   HardDrive,
   Activity,
+  FolderPlus,
+  Folder,
+  ChevronRight,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { apiDelete, apiGet, apiPatch, apiPost } from '../utils/api';
 import { formatSize, formatTime } from '../utils/format';
@@ -366,6 +370,7 @@ interface AdminFile {
   key: string;
   title: string;
   type: string;
+  dir: string | null;
   size: number | null;
   subject: string | null;
   uploader: string;
@@ -376,12 +381,20 @@ interface AdminFile {
 function FilesTab() {
   const { toast } = useToast();
   const [files, setFiles] = useState<AdminFile[] | null>(null);
+  const [currentDir, setCurrentDir] = useState('');
+  const [folders, setFolders] = useState<string[]>([]);
+  const [creating, setCreating] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
 
   const load = useCallback(async () => {
     setFiles(null);
     try {
-      const d = await apiGet<{ files: AdminFile[] }>('/api/manifest');
+      const [d, f] = await Promise.all([
+        apiGet<{ files: AdminFile[] }>('/api/manifest'),
+        apiGet<{ folders: string[] }>('/api/folders'),
+      ]);
       setFiles(d.files);
+      setFolders(f.folders);
     } catch {
       setFiles([]);
     }
@@ -390,6 +403,31 @@ function FilesTab() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // 当前目录下的子文件夹
+  const subFolders = folders
+    .filter((p) => {
+      if (currentDir === '') return !p.includes('/');
+      return p.startsWith(currentDir + '/') && !p.slice(currentDir.length + 1).includes('/');
+    })
+    .map((p) => (currentDir === '' ? p : p.slice(currentDir.length + 1)));
+
+  const dirFiles = (files ?? []).filter((f) => (f.dir ?? '') === currentDir);
+
+  const createFolder = async () => {
+    const name = newFolderName.trim();
+    if (!name) return;
+    const path = currentDir ? `${currentDir}/${name}` : name;
+    try {
+      await apiPost('/api/folders', { subjectId: null, path });
+      toast('文件夹已创建', 'success');
+      setCreating(false);
+      setNewFolderName('');
+      load();
+    } catch (err: any) {
+      toast(err.message || '创建失败', 'error');
+    }
+  };
 
   const remove = async (f: AdminFile) => {
     if (!confirm(`确定删除「${f.title}」？此操作不可恢复。`)) return;
@@ -416,12 +454,66 @@ function FilesTab() {
   return (
     <div>
       <h1 className="hidden lg:block text-h2 font-semibold text-ink dark:text-gray-100 mb-6">文件管理</h1>
+      {/* 工具行：面包屑 + 新建文件夹 */}
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <nav className="flex items-center gap-1 text-[13px] flex-1 min-w-0">
+          <button onClick={() => setCurrentDir('')} className="text-ink-secondary dark:text-gray-400 hover:text-primary transition-all duration-150 cursor-pointer">
+            全部文件
+          </button>
+          {currentDir.split('/').filter(Boolean).map((seg, i, arr) => (
+            <span key={i} className="flex items-center gap-1">
+              <ChevronRight size={14} className="text-ink-muted dark:text-gray-600" />
+              <button
+                onClick={() => setCurrentDir(arr.slice(0, i + 1).join('/'))}
+                className={i === arr.length - 1 ? 'text-ink dark:text-gray-200' : 'text-ink-secondary dark:text-gray-400 hover:text-primary'}
+              >
+                {seg}
+              </button>
+            </span>
+          ))}
+        </nav>
+        {creating ? (
+          <div className="flex items-center gap-2">
+            <input
+              autoFocus
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && createFolder()}
+              placeholder="文件夹名称"
+              className="h-9 px-3 rounded-btn border border-line dark:border-gray-700 bg-white dark:bg-gray-900 text-[13px] w-40"
+            />
+            <Button size="sm" onClick={createFolder}>确定</Button>
+            <Button variant="secondary" size="sm" onClick={() => setCreating(false)}>取消</Button>
+          </div>
+        ) : (
+          <Button variant="secondary" size="sm" onClick={() => { setCreating(true); setNewFolderName(''); }}>
+            <FolderPlus size={15} />
+            新建文件夹
+          </Button>
+        )}
+      </div>
+
       {!files ? (
         <ListSkeleton count={5} />
-      ) : files.length === 0 ? (
-        <EmptyState icon={FileText} title="暂无文件" />
+      ) : dirFiles.length === 0 && subFolders.length === 0 ? (
+        <EmptyState icon={FileText} title="此文件夹为空" />
       ) : (
         <div className="bg-white dark:bg-gray-900 border border-line dark:border-gray-800 rounded-card overflow-hidden">
+          {/* 子文件夹行 */}
+          {subFolders.length > 0 && (
+            <div className="flex flex-wrap gap-2 p-3 border-b border-line dark:border-gray-800">
+              {subFolders.map((name) => (
+                <button
+                  key={name}
+                  onClick={() => setCurrentDir(currentDir ? `${currentDir}/${name}` : name)}
+                  className="flex items-center gap-1.5 h-9 px-3 rounded-btn border border-line dark:border-gray-700 text-[13px] text-ink dark:text-gray-200 hover:border-primary dark:hover:border-indigo-500 transition-all duration-150 cursor-pointer"
+                >
+                  <Folder size={15} className="text-primary dark:text-indigo-400" />
+                  {name}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="hidden md:block">
             <table className="w-full text-[14px]">
               <thead>
@@ -434,7 +526,7 @@ function FilesTab() {
                 </tr>
               </thead>
               <tbody>
-                {files.map((f) => (
+                {dirFiles.map((f) => (
                   <tr key={f.key} className="border-t border-line dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-all duration-150 ease-out">
                     <td className="px-5 py-3 text-ink dark:text-gray-100 max-w-[240px] truncate">{f.title}</td>
                     <td className="px-5 py-3 text-ink-secondary dark:text-gray-400">{f.subject ?? '—'}</td>
@@ -458,7 +550,7 @@ function FilesTab() {
             </table>
           </div>
           <div className="md:hidden flex flex-col">
-            {files.map((f) => (
+            {dirFiles.map((f) => (
               <div key={f.key} className="border-b border-line dark:border-gray-800 p-4 last:border-b-0">
                 <div className="flex items-start justify-between gap-2">
                   <p className="text-[14px] font-medium text-ink dark:text-gray-100 flex-1 min-w-0 truncate">{f.title}</p>
@@ -503,6 +595,10 @@ function UsersTab() {
   const [batchText, setBatchText] = useState('');
   const [batchRole, setBatchRole] = useState('role-student');
   const [batchSubjects, setBatchSubjects] = useState<string[]>([]);
+  const [batchPassword, setBatchPassword] = useState('');
+  const importPasswords = useRef<Map<string, string>>(new Map());
+  const importFileRef = useRef<HTMLInputElement>(null);
+  const [importInfo, setImportInfo] = useState('');
   const [batchLoading, setBatchLoading] = useState(false);
 
   const load = useCallback(async () => {
@@ -529,11 +625,15 @@ function UsersTab() {
   }, [load]);
 
   const runBatch = async () => {
-    const usernames = batchText
-      .split(/[\n,，\s]+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-    if (usernames.length === 0) {
+    // 每行支持 "用户名,密码"（密码可选，优先于统一初始密码）
+    const lines = batchText.split(/[\n]+/).map((s) => s.trim()).filter(Boolean);
+    const pairs = lines.map((line) => {
+      const parts = line.split(/[,，\t]/).map((x) => x.trim());
+      const username = parts[0];
+      const pwd = parts[1] || importPasswords.current.get(username) || batchPassword || '';
+      return { username, password: pwd };
+    });
+    if (pairs.length === 0) {
       toast('请输入至少一个用户名', 'warning');
       return;
     }
@@ -542,8 +642,9 @@ function UsersTab() {
       const d = await apiPost<{ created: CreatedUser[]; failed: { username: string; reason: string }[] }>(
         '/api/admin/users/batch',
         {
-          users: usernames.map((username) => ({
-            username,
+          users: pairs.map((p) => ({
+            username: p.username,
+            password: p.password || undefined,
             roleIds: [batchRole],
             subjectIds: batchSubjects,
           })),
@@ -554,6 +655,8 @@ function UsersTab() {
         toast(`${d.failed.length} 个创建失败：${d.failed.map((f) => f.username).join('、')}`, 'warning');
       }
       setBatchText('');
+      importPasswords.current.clear();
+      setImportInfo('');
       setBatchOpen(false);
       setShowPasswords(true);
       load();
@@ -739,8 +842,61 @@ function UsersTab() {
               })}
             </div>
           </div>
+          <Input
+            label="统一初始密码（可选，留空则每个用户随机生成）"
+            value={batchPassword}
+            onChange={(e) => setBatchPassword(e.target.value)}
+            type="password"
+            placeholder="至少 6 位"
+          />
+          <div>
+            <input
+              ref={importFileRef}
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                try {
+                  const XLSX: any = await import('xlsx');
+                  const buf = await file.arrayBuffer();
+                  const wb = XLSX.read(buf, { type: 'array' });
+                  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 }) as string[][];
+                  const names: string[] = [];
+                  importPasswords.current.clear();
+                  for (const row of rows) {
+                    const username = String(row?.[0] ?? '').trim();
+                    if (!username) continue;
+                    names.push(username);
+                    const pwd = String(row?.[1] ?? '').trim();
+                    if (pwd) importPasswords.current.set(username, pwd);
+                  }
+                  if (names.length === 0) {
+                    toast('表格中未找到用户名', 'warning');
+                    return;
+                  }
+                  setBatchText(names.join('\n'));
+                  setImportInfo(`已导入 ${names.length} 个用户${importPasswords.current.size > 0 ? `（含 ${importPasswords.current.size} 个自定义密码）` : ''}`);
+                  toast(`已导入 ${names.length} 个用户名`, 'success');
+                } catch (err: any) {
+                  toast(err.message || '表格解析失败', 'error');
+                }
+                e.target.value = '';
+              }}
+            />
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => importFileRef.current?.click()}
+            >
+              <FileSpreadsheet size={14} />
+              导入用户表格（.xlsx/.csv，第一列用户名，第二列密码可选）
+            </Button>
+            {importInfo && <p className="mt-1.5 text-[12px] text-primary dark:text-indigo-400">{importInfo}</p>}
+          </div>
           <p className="text-[12px] text-ink-muted dark:text-gray-500">
-            系统为每个用户生成 ≥12 位随机密码，仅在创建结果中显示一次。
+            密码规则：行内「用户名,密码」＞ 表格第二列 ＞ 统一初始密码 ＞ 随机生成（≥12 位）。密码仅在创建结果中显示一次。
           </p>
         </div>
         <div className="mt-6 flex justify-end gap-2">

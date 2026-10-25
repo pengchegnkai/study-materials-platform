@@ -8,6 +8,7 @@ import '../pages/preview_page.dart';
 import '../pages/teacher_page.dart';
 import '../pages/server_config_page.dart';
 import '../pages/admin_page.dart';
+import '../pages/change_password_page.dart';
 
 final router = GoRouter(
   initialLocation: '/login',
@@ -26,5 +27,6 @@ final router = GoRouter(
     ),
     GoRoute(path: '/teacher', builder: (_, __) => const TeacherPage()),
     GoRoute(path: '/admin', builder: (_, __) => const AdminPage()),
+    GoRoute(path: '/change-password', builder: (_, __) => const ChangePasswordPage()),
   ],
 );

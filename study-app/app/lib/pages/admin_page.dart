@@ -251,16 +251,23 @@ class _FilesTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final adminFiles = ref.watch(adminFilesProvider);
+    final folders = ref.watch(adminFoldersProvider);
 
     return adminFiles.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => Center(child: Text('加载失败: $e', style: TextStyle(color: Theme.of(context).colorScheme.error))),
-      data: (files) => FileManager(
-        files: files,
-        onDelete: (f) => ref.read(adminProvider).deleteFile(f.key),
-        onToggleVisibility: (f) => ref.read(adminProvider).toggleFileVisibility(f.key, f.visibility == 'published' ? 'private' : 'published'),
-        onRename: (f, newTitle) => ref.read(adminProvider).renameFile(f.key, newTitle),
-        canManage: true,
+      data: (files) => folders.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => Center(child: Text('加载失败: $e', style: TextStyle(color: Theme.of(context).colorScheme.error))),
+        data: (folderList) => FileManager(
+          files: files,
+          folders: folderList,
+          onDelete: (f) => ref.read(adminProvider).deleteFile(f.key),
+          onToggleVisibility: (f) => ref.read(adminProvider).toggleFileVisibility(f.key, f.visibility == 'published' ? 'private' : 'published'),
+          onRename: (f, newTitle) => ref.read(adminProvider).renameFile(f.key, newTitle),
+          onCreateFolder: (path) => ref.read(adminProvider).createFolder(path),
+          canManage: true,
+        ),
       ),
     );
   }

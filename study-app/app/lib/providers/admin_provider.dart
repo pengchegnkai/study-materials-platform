@@ -54,6 +54,11 @@ final adminRolesProvider = FutureProvider<List<({String id, String name})>>((ref
   ];
 });
 
+/// 全部虚拟文件夹（文件管理导航用）
+final adminFoldersProvider = FutureProvider<List<String>>((ref) async {
+  return PlatformService().folders();
+});
+
 final adminProvider = Provider<AdminNotifier>((ref) => AdminNotifier(ref));
 
 class AdminNotifier {
@@ -101,6 +106,12 @@ class AdminNotifier {
       if (subjectIds != null) 'subjectIds': subjectIds,
     });
     ref.invalidate(adminUsersProvider);
+  }
+
+  // ---------- 文件夹 ----------
+  Future<void> createFolder(String path) async {
+    await PlatformService().createFolder(path: path);
+    ref.invalidate(adminFoldersProvider);
   }
 
   // ---------- 科目 ----------

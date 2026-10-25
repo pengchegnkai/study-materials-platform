@@ -32,6 +32,11 @@ class HomePage extends ConsumerWidget {
               onPressed: () => context.push('/admin'),
             ),
           IconButton(
+            icon: const Icon(Icons.lock_outline),
+            tooltip: '修改密码',
+            onPressed: () => context.push('/change-password'),
+          ),
+          IconButton(
             icon: const Icon(Icons.logout_outlined),
             tooltip: '退出登录',
             onPressed: () async {

@@ -76,6 +76,19 @@ class PlatformService {
     return (resp.data['subjects'] as List).map((j) => Subject.fromJson(j)).toList();
   }
 
+  // ---------- 文件夹 ----------
+
+  Future<List<String>> folders({String? subjectId}) async {
+    _ensure();
+    final resp = await _dio.get('/folders', queryParameters: {if (subjectId != null) 'subjectId': subjectId});
+    return (resp.data['folders'] as List).cast<String>();
+  }
+
+  Future<void> createFolder({String? subjectId, required String path}) async {
+    _ensure();
+    await _dio.post('/folders', data: {if (subjectId != null) 'subjectId': subjectId, 'path': path});
+  }
+
   // ---------- 文件 ----------
 
   Future<List<FileItem>> manifest() async {
@@ -109,12 +122,17 @@ class PlatformService {
     required String filename,
     required String subjectId,
     required String visibility,
+    String dir = '',
   }) async {
     _ensure();
     try {
       final form = FormData();
       form.files.add(MapEntry('file', await MultipartFile.fromFile(file.path, filename: filename)));
-      form.fields.addAll([MapEntry('subjectId', subjectId), MapEntry('visibility', visibility)]);
+      form.fields.addAll([
+        MapEntry('subjectId', subjectId),
+        MapEntry('visibility', visibility),
+        MapEntry('path', dir),
+      ]);
       final resp = await _dio.post('/upload', data: form);
       return UploadResult(ok: true, key: resp.data['key'] as String?);
     } on DioException catch (e) {

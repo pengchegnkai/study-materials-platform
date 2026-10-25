@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>office preview</title>
+<script src="./jszip.min.js"></script>
+<script src="./docx-preview.min.js"></script>
+<script src="./xlsx.full.min.js"></script>
+<style>
+  body { margin:0; background:#fff; font-family:-apple-system,'Noto Sans SC',sans-serif; color:#111827; }
+  #container { padding:16px; }
+  h3.sheet { font-size:14px; font-weight:600; margin:14px 0 6px; color:#4F46E5; }
+  table { border-collapse:collapse; font-size:12px; }
+  td, th { border:1px solid #E5E7EB; padding:3px 7px; white-space:nowrap; }
+  .pptx-slide { background:#fff; border:1px solid #E5E7EB; border-radius:8px; padding:16px; margin-bottom:12px; }
+</style>
+</head>
+<body>
+<div id="container">加载中…</div>
+<script type="module">
+  import { PptxRenderer } from './pptx-renderer.es.js';
+  window.__PptxRenderer = PptxRenderer;
+  window.__pptxReady = true;
+</script>
+<script>
+function b64ToBytes(b64) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+window.renderFile = async function (kind, base64) {
+  const container = document.getElementById('container');
+  container.innerHTML = '<p style="color:#6B7280">解析中…</p>';
+  const bytes = b64ToBytes(base64);
+  try {
+    if (kind === 'docx') {
+      container.innerHTML = '';
+      await window.docx.renderAsync(bytes, container, null, { inWrapper: true, ignoreWidth: false });
+    } else if (kind === 'excel') {
+      container.innerHTML = '';
+      const wb = window.XLSX.read(bytes, { type: 'array' });
+      for (const name of wb.SheetNames) {
+        const h = document.createElement('h3');
+        h.className = 'sheet';
+        h.textContent = name;
+        container.appendChild(h);
+        const wrap = document.createElement('div');
+        wrap.style.overflowX = 'auto';
+        wrap.innerHTML = window.XLSX.utils.sheet_to_html(wb.Sheets[name]);
+        container.appendChild(wrap);
+      }
+    } else if (kind === 'pptx') {
+      let wait = 0;
+      while (!window.__pptxReady && wait < 5000) {
+        await new Promise((r) => setTimeout(r, 100));
+        wait += 100;
+      }
+      container.innerHTML = '';
+      const renderer = new window.__PptxRenderer();
+      await renderer.render(bytes, container);
+      container.querySelectorAll('section,div').forEach((el) => {
+        if (el.style && el.style.width && parseInt(el.style.width) > 0) el.style.maxWidth = '100%';
+      });
+    }
+    window.__renderDone = true;
+  } catch (e) {
+    container.innerHTML = '<p style="color:#DC2626">渲染失败：' + (e && e.message ? e.message : e) + '</p>';
+    window.__renderError = String(e);
+  }
+};
+</script>
+</body>
+</html>

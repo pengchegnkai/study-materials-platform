@@ -14,6 +14,12 @@ class FileManager extends ConsumerStatefulWidget {
   final FileActionCallback onToggleVisibility;
   final RenameCallback onRename;
   final bool canManage;
+  /// 全部虚拟目录路径（供导航；由调用方按权限/科目过滤）
+  final List<String> folders;
+  /// 新建文件夹（当前目录 + 名称），null 则隐藏入口
+  final Future<void> Function(String path)? onCreateFolder;
+  /// 上传到指定目录，null 则隐藏入口
+  final Future<void> Function(String dir)? onUpload;
 
   const FileManager({
     super.key,
@@ -22,6 +28,9 @@ class FileManager extends ConsumerStatefulWidget {
     required this.onToggleVisibility,
     required this.onRename,
     this.canManage = true,
+    this.folders = const [],
+    this.onCreateFolder,
+    this.onUpload,
   });
 
   @override
@@ -30,7 +39,7 @@ class FileManager extends ConsumerStatefulWidget {
 
 class _FileManagerState extends ConsumerState<FileManager> {
   final Set<String> _selectedKeys = {};
-  String _currentPath = '/';
+  String _currentPath = '';
   String _viewMode = 'list'; // 'list' | 'grid'
   String _sortBy = 'name'; // 'name' | 'size' | 'date'
   bool _sortAsc = true;
@@ -38,8 +47,23 @@ class _FileManagerState extends ConsumerState<FileManager> {
   AdminFile? _contextFile;
   Offset? _menuPosition;
 
+  /// 当前目录下的文件
+  List<AdminFile> get _dirFiles =>
+      widget.files.where((f) => f.dir == _currentPath).toList();
+
+  /// 当前目录下的子文件夹（下一层）
+  List<String> get _subFolders => widget.folders
+      .where((p) {
+        if (_currentPath.isEmpty) return !p.contains('/');
+        return p.startsWith('$_currentPath/') &&
+            !p.substring(_currentPath.length + 1).contains('/');
+      })
+      .map((p) =>
+          _currentPath.isEmpty ? p : p.substring(_currentPath.length + 1))
+      .toList();
+
   List<AdminFile> get _sortedFiles {
-    final list = List<AdminFile>.from(widget.files);
+    final list = List<AdminFile>.from(_dirFiles);
     list.sort((a, b) {
       int cmp;
       switch (_sortBy) {
@@ -210,6 +234,8 @@ class _FileManagerState extends ConsumerState<FileManager> {
         _buildToolbar(),
         // 面包屑/路径
         _buildBreadcrumb(),
+        // 子文件夹行
+        if (_subFolders.isNotEmpty) _buildFolderRow(),
         // 文件列表/网格
         Expanded(
           child: _buildFileList(),
@@ -220,9 +246,48 @@ class _FileManagerState extends ConsumerState<FileManager> {
     );
   }
 
+  /// 子文件夹行（网格/列表视图共用）
+  Widget _buildFolderRow() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3),
+        border: Border(bottom: BorderSide(color: Theme.of(context).dividerColor)),
+      ),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (final name in _subFolders)
+            InkWell(
+              onTap: () => setState(() => _currentPath = _currentPath.isEmpty ? name : '$_currentPath/$name'),
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Theme.of(context).dividerColor),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.folder_outlined, size: 16, color: Theme.of(context).colorScheme.primary),
+                    const SizedBox(width: 6),
+                    Text(name, style: const TextStyle(fontSize: 13)),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildToolbar() {
     final selectedCount = _selectedKeys.length;
     final allSelected = _selectedKeys.length == _sortedFiles.length && _sortedFiles.isNotEmpty;
+    final hasFolderActions = widget.onCreateFolder != null || widget.onUpload != null;
 
     return Container(
       height: 48,
@@ -243,7 +308,7 @@ class _FileManagerState extends ConsumerState<FileManager> {
             onSelectionChanged: (s) => setState(() => _viewMode = s.first),
             showSelectedIcon: false,
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 8),
           // 排序
           PopupMenuButton<String>(
             initialValue: _sortBy,
@@ -264,34 +329,68 @@ class _FileManagerState extends ConsumerState<FileManager> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(Icons.sort, size: 18, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                const SizedBox(width: 4),
-                Text(_sortByLabel(_sortBy), style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant)),
                 Icon(_sortAsc ? Icons.arrow_upward : Icons.arrow_downward, size: 14),
               ],
             ),
           ),
           const Spacer(),
+          // 文件夹操作
+          if (hasFolderActions)
+            PopupMenuButton<String>(
+              onSelected: (v) {
+                if (v == 'newFolder') _showCreateFolderDialog();
+                if (v == 'upload') widget.onUpload?.call(_currentPath);
+              },
+              itemBuilder: (_) => [
+                if (widget.onCreateFolder != null)
+                  const PopupMenuItem(value: 'newFolder', child: Row(children: [Icon(Icons.create_new_folder_outlined, size: 18), SizedBox(width: 8), Text('新建文件夹')])),
+                if (widget.onUpload != null)
+                  const PopupMenuItem(value: 'upload', child: Row(children: [Icon(Icons.upload_file_outlined, size: 18), SizedBox(width: 8), Text('上传到此处')])),
+              ],
+              child: Icon(Icons.add_circle_outline, size: 22, color: Theme.of(context).colorScheme.primary),
+            ),
           if (selectedCount > 0) ...[
             Text('已选 $selectedCount 项', style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.primary)),
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
             if (widget.canManage)
               FilledButton.icon(
                 icon: const Icon(Icons.delete_outline, size: 16),
-                label: Text('删除 ($selectedCount)'),
+                label: Text('删除($selectedCount)'),
                 onPressed: () => _batchDelete(),
-                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                style: FilledButton.styleFrom(backgroundColor: Colors.red, visualDensity: VisualDensity.compact),
               ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 4),
           ],
           // 全选
-          Checkbox(
-            value: allSelected,
-            tristate: selectedCount > 0 && !allSelected,
-            onChanged: (_) => _selectAll(),
-          ),
+          if (widget.canManage)
+            Checkbox(
+              value: allSelected,
+              tristate: selectedCount > 0 && !allSelected,
+              onChanged: (_) => _selectAll(),
+            ),
         ],
       ),
     );
+  }
+
+  Future<void> _showCreateFolderDialog() async {
+    final ctrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('新建文件夹'),
+        content: TextField(controller: ctrl, autofocus: true, decoration: const InputDecoration(labelText: '文件夹名称')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('创建')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final name = ctrl.text.trim();
+    if (name.isEmpty) return;
+    final path = _currentPath.isEmpty ? name : '$_currentPath/$name';
+    await widget.onCreateFolder?.call(path);
   }
 
   String _sortByLabel(String s) {
@@ -303,21 +402,41 @@ class _FileManagerState extends ConsumerState<FileManager> {
   }
 
   Widget _buildBreadcrumb() {
+    final segs = _currentPath.split('/').where((s) => s.isNotEmpty).toList();
     return Container(
-      height: 36,
+      height: 40,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Row(
         children: [
-          Icon(Icons.folder_outlined, size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
-          const SizedBox(width: 8),
-          Text(_currentPath, style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          InkWell(
+            onTap: () => setState(() => _currentPath = ''),
+            child: Row(children: [
+              Icon(Icons.folder_outlined, size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
+              const SizedBox(width: 4),
+              Text('全部文件', style: TextStyle(fontSize: 13, color: _currentPath.isEmpty ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurfaceVariant)),
+            ]),
+          ),
+          for (var i = 0; i < segs.length; i++) ...[
+            const Icon(Icons.chevron_right, size: 14, color: Color(0xFF9CA3AF)),
+            InkWell(
+              onTap: () => setState(() => _currentPath = segs.take(i + 1).join('/')),
+              child: Text(
+                segs[i],
+                style: TextStyle(
+                  fontSize: 13,
+                  color: i == segs.length - 1 ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontWeight: i == segs.length - 1 ? FontWeight.w600 : FontWeight.w400,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 
   Widget _buildFileList() {
-    if (_sortedFiles.isEmpty) {
+    if (_sortedFiles.isEmpty && _subFolders.isEmpty) {
       return Center(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Icon(Icons.folder_open_outlined, size: 64, color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.3)),

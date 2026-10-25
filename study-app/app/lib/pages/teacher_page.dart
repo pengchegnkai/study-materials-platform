@@ -24,6 +24,7 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
   bool _uploading = false;
   bool _loadingFiles = true;
   List<FileItem> _myFiles = [];
+  List<String> _folders = [];
 
   @override
   void initState() {
@@ -41,9 +42,11 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
     setState(() => _loadingFiles = true);
     try {
       final all = await _svc.manifest();
+      final folders = await _svc.folders().catchError((_) => <String>[]);
       if (!mounted) return;
       setState(() {
         _myFiles = all.where((f) => f.canManage).toList();
+        _folders = folders;
         _loadingFiles = false;
       });
     } catch (_) {
@@ -51,7 +54,7 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
     }
   }
 
-  Future<void> _pickAndUpload() async {
+  Future<void> _pickAndUpload([String dir = '']) async {
     final subjects = await _svc.subjects();
     if (!mounted) return;
 
@@ -87,6 +90,7 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
         filename: pf.name,
         subjectId: subjectId!,
         visibility: _visibility,
+        dir: dir,
       );
       if (r.ok) {
         ok++;
@@ -223,9 +227,19 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
                 ? const Center(child: CircularProgressIndicator())
                 : FileManager(
                     files: _myFiles.map(_toAdminFile).toList(),
+                    folders: _folders,
                     onDelete: _delete,
                     onToggleVisibility: _toggleVisibility,
                     onRename: _rename,
+                    onCreateFolder: (path) async {
+                      try {
+                        await _svc.createFolder(path: path);
+                        _loadFiles();
+                      } catch (e) {
+                        _toast('创建失败：$e'.replaceFirst('Exception: ', ''));
+                      }
+                    },
+                    onUpload: (dir) => _pickAndUpload(dir),
                     canManage: true,
                   ),
           ),

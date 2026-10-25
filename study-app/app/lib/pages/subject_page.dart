@@ -46,8 +46,10 @@ class SubjectPage extends ConsumerWidget {
             );
           }
           final adminFiles = allFiles.map(_toAdminFile).toList();
+          final dirs = adminFiles.map((f) => f.dir).where((d) => d.isNotEmpty).toSet().toList();
           return FileManager(
             files: adminFiles,
+            folders: dirs,
             onDelete: (_) async {}, // 学生无删除权限
             onToggleVisibility: (_) async {}, // 学生无切换权限
             onRename: (_, __) async {}, // 学生无重命名权限

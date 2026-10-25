@@ -6,8 +6,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:archive/archive.dart';
-import 'package:spreadsheet_decoder/spreadsheet_decoder.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 import 'dart:io';
 import '../services/platform_service.dart';
 import '../utils/format.dart';
@@ -99,11 +98,9 @@ class _PreviewPageState extends State<PreviewPage> {
           ),
         );
       case 'excel':
-        return _ExcelViewer(bytes: bytes);
       case 'docx':
-        return _DocxViewer(bytes: bytes);
       case 'pptx':
-        return _PptxViewer(bytes: bytes);
+        return OfficePreviewPage(kind: widget.type, bytes: bytes, title: widget.title);
       default:
         // PPT/Word 等：提示通过分享/用其他应用打开
         return Center(
@@ -129,229 +126,72 @@ class _PreviewPageState extends State<PreviewPage> {
   }
 }
 
-
-// ---------- Excel 表格预览 ----------
-class _ExcelViewer extends StatefulWidget {
+// ---------- Office 完整渲染（WebView 加载网页端同款 JS 渲染库） ----------
+class OfficePreviewPage extends StatefulWidget {
+  final String kind; // docx / pptx / excel
   final Uint8List bytes;
-  const _ExcelViewer({required this.bytes});
+  final String title;
+  const OfficePreviewPage({super.key, required this.kind, required this.bytes, required this.title});
 
   @override
-  State<_ExcelViewer> createState() => _ExcelViewerState();
+  State<OfficePreviewPage> createState() => _OfficePreviewPageState();
 }
 
-class _ExcelViewerState extends State<_ExcelViewer> {
-  late final Future<List<({String name, List<List<String>> rows})>> _sheets;
+class _OfficePreviewPageState extends State<OfficePreviewPage> {
+  late final PlatformWebViewControllerCreationParams _params;
+  WebViewController? _controller;
+  bool _pageLoaded = false;
+  bool _injected = false;
+  String? _jsError;
 
   @override
   void initState() {
     super.initState();
-    _sheets = Future(() {
-      try {
-        final decoder = SpreadsheetDecoder.decodeBytes(widget.bytes);
-        final out = <({String name, List<List<String>> rows})>[];
-        for (final name in decoder.tables.keys) {
-          final rows = decoder.tables[name]!.rows;
-          // 大表限制 300 行，避免卡顿
-          final limited = rows.take(300).map((r) => r.map((c) => c?.toString() ?? '').toList()).toList();
-          out.add((name: name, rows: limited));
-        }
-        return out;
-      } catch (e) {
-        throw Exception('表格解析失败：$e');
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<List<({String name, List<List<String>> rows})>>(
-      future: _sheets,
-      builder: (context, snap) {
-        if (snap.hasError) {
-          return Center(child: Padding(padding: const EdgeInsets.all(24), child: Text('${snap.error}'.replaceFirst('Exception: ', ''), textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13))));
-        }
-        if (!snap.hasData) return const Center(child: CircularProgressIndicator());
-        final sheets = snap.data!;
-        if (sheets.isEmpty) return const Center(child: Text('空表格', style: TextStyle(color: Color(0xFF6B7280))));
-        return ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            for (final sheet in sheets) ...[
-              Text(sheet.name, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 8),
-              Card(
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: DataTable(
-                    columnSpacing: 24,
-                    columns: [
-                      for (var c = 0; c < _colCount(sheet.rows); c++)
-                        DataColumn(label: Text('列${c + 1}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600))),
-                    ],
-                    rows: [
-                      for (final row in sheet.rows)
-                        DataRow(cells: [
-                          for (final cell in row) DataCell(SizedBox(width: 110, child: Text(cell, style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis))),
-                        ]),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-            ],
-            Text('超过 300 行的部分已省略', style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
-          ],
-        );
-      },
-    );
-  }
-
-  int _colCount(List<List<String>> rows) {
-    var max = 0;
-    for (final r in rows) {
-      if (r.length > max) max = r.length;
-    }
-    return max;
-  }
-}
-
-// ---------- Word (docx) 文本预览 ----------
-class _DocxViewer extends StatefulWidget {
-  final Uint8List bytes;
-  const _DocxViewer({required this.bytes});
-
-  @override
-  State<_DocxViewer> createState() => _DocxViewerState();
-}
-
-class _DocxViewerState extends State<_DocxViewer> {
-  late final Future<String> _text;
-
-  @override
-  void initState() {
-    super.initState();
-    _text = Future(() {
-      try {
-        final archive = ZipDecoder().decodeBytes(widget.bytes);
-        final doc = archive.findFile('word/document.xml');
-        if (doc == null) throw Exception('不是有效的 Word 文档');
-        final xml = utf8.decode(doc.content, allowMalformed: true);
-        // 按段落 <w:p> 切分，段内拼接 <w:t> 文本
-        final buf = <String>[];
-        final bodyStart = xml.indexOf('<w:body>');
-        final src = bodyStart >= 0 ? xml.substring(bodyStart) : xml;
-        for (final m in RegExp(r'<w:p[ >].*?</w:p>|<w:p[ >][^>]*/>', dotAll: true).allMatches(src)) {
-          final seg = m.group(0)!;
-          final text = RegExp(r'<w:t[^>]*>(.*?)</w:t>', dotAll: true).allMatches(seg).map((t) => t.group(1) ?? '').join();
-          buf.add(_xmlUnescape(text));
-        }
-        if (buf.isEmpty) buf.add(_xmlUnescape(xml.replaceAll(RegExp(r'<[^>]+>'), '')));
-        return buf.join('\n');
-      } catch (e) {
-        throw Exception('Word 解析失败：$e');
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<String>(
-      future: _text,
-      builder: (context, snap) {
-        if (snap.hasError) {
-          return Center(child: Padding(padding: const EdgeInsets.all(24), child: Text('${snap.error}'.replaceFirst('Exception: ', ''), textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13))));
-        }
-        if (!snap.hasData) return const Center(child: CircularProgressIndicator());
-        final lines = snap.data!.split('\n');
-        return ListView.builder(
-          padding: const EdgeInsets.all(20),
-          itemCount: lines.length,
-          itemBuilder: (_, i) => Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Text(lines[i], style: const TextStyle(fontSize: 14, height: 1.5)),
-          ),
-        );
-      },
-    );
-  }
-}
-
-// ---------- PPT (pptx) 幻灯片文本预览 ----------
-class _PptxViewer extends StatefulWidget {
-  final Uint8List bytes;
-  const _PptxViewer({required this.bytes});
-
-  @override
-  State<_PptxViewer> createState() => _PptxViewerState();
-}
-
-class _PptxViewerState extends State<_PptxViewer> {
-  late final Future<List<({int no, String text})>> _slides;
-
-  @override
-  void initState() {
-    super.initState();
-    _slides = Future(() {
-      try {
-        final archive = ZipDecoder().decodeBytes(widget.bytes);
-        final slides = archive.files
-            .where((f) => RegExp(r'ppt/slides/slide\d+\.xml$').hasMatch(f.name))
-            .toList()
-          ..sort((a, b) {
-            int n(String s) => int.parse(RegExp(r'slide(\d+)\.xml').firstMatch(s)!.group(1)!);
-            return n(a.name).compareTo(n(b.name));
-          });
-        if (slides.isEmpty) throw Exception('不是有效的 PPT 文档');
-        return slides.map((f) {
-          final xml = utf8.decode(f.content as List<int>, allowMalformed: true);
-          final text = RegExp(r'<a:t>(.*?)</a:t>', dotAll: true).allMatches(xml).map((m) => _xmlUnescape(m.group(1) ?? '')).where((t) => t.trim().isNotEmpty).join('\n');
-          final no = int.parse(RegExp(r'slide(\d+)\.xml').firstMatch(f.name)!.group(1)!);
-          return (no: no, text: text.isEmpty ? '（空白页）' : text);
-        }).toList();
-      } catch (e) {
-        throw Exception('PPT 解析失败：$e');
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<List<({int no, String text})>>(
-      future: _slides,
-      builder: (context, snap) {
-        if (snap.hasError) {
-          return Center(child: Padding(padding: const EdgeInsets.all(24), child: Text('${snap.error}'.replaceFirst('Exception: ', ''), textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13))));
-        }
-        if (!snap.hasData) return const Center(child: CircularProgressIndicator());
-        final slides = snap.data!;
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: slides.length,
-          itemBuilder: (_, i) {
-            final s = slides[i];
-            return Card(
-              margin: const EdgeInsets.only(bottom: 12),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('第 ${s.no} 页', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.primary)),
-                  const SizedBox(height: 8),
-                  Text(s.text, style: const TextStyle(fontSize: 14, height: 1.5)),
-                ]),
-              ),
+    _params = const PlatformWebViewControllerCreationParams();
+    final controller = WebViewController.fromPlatformCreationParams(_params)
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setNavigationDelegate(NavigationDelegate(
+        onPageFinished: (_) async {
+          setState(() => _pageLoaded = true);
+          try {
+            final b64 = base64Encode(widget.bytes);
+            await _controller?.runJavaScript(
+              "renderFile(" + const JsonEncoder().convert(widget.kind) + ", " + const JsonEncoder().convert(b64) + ");",
             );
-          },
-        );
-      },
+            if (mounted) setState(() => _injected = true);
+          } catch (e) {
+            if (mounted) setState(() => _jsError = '数据注入失败：$e');
+          }
+        },
+      ));
+    controller.loadFlutterAsset('assets/office/preview.html');
+    _controller = controller;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+      ),
+      body: Stack(
+        children: [
+          WebViewWidget(controller: _controller!),
+          if (!_pageLoaded || !_injected)
+            Container(
+              color: Colors.white,
+              child: Center(
+                child: _jsError != null
+                    ? Padding(padding: const EdgeInsets.all(24), child: Text(_jsError!, textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13)))
+                    : Column(mainAxisSize: MainAxisSize.min, children: const [
+                        CircularProgressIndicator(),
+                        SizedBox(height: 16),
+                        Text('正在渲染文档…', style: TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
+                      ]),
+              ),
+            ),
+        ],
+      ),
     );
   }
-}
-
-String _xmlUnescape(String s) {
-  return s
-      .replaceAll('&lt;', '<')
-      .replaceAll('&gt;', '>')
-      .replaceAll('&quot;', '"')
-      .replaceAll('&apos;', "'")
-      .replaceAll('&amp;', '&');
 }

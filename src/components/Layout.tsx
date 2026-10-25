@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { useNavigate } from 'react-router-dom';
 import { apiGet } from '../utils/api';
 import { ToastProvider } from './Toast';
+import { Button } from './Button';
 
 export interface SessionInfo {
   id: string;
@@ -76,6 +77,7 @@ function AppHeader() {
     { to: '/admin', label: '管理后台', show: isAdmin },
   ];
 
+  const [pwdOpen, setPwdOpen] = useState(false);
   const logout = async () => {
     await fetch('/api/logout', { method: 'POST', credentials: 'include' });
     await refresh();
@@ -83,6 +85,7 @@ function AppHeader() {
   };
 
   return (
+    <>
     <header className="sticky top-0 z-40 h-14 bg-white dark:bg-[#111827] border-b border-line dark:border-gray-800">
       <div className="max-w-[1200px] mx-auto px-6 md:px-4 h-full flex items-center justify-between">
         <div className="flex items-center gap-8 min-w-0">
@@ -124,6 +127,15 @@ function AppHeader() {
                       {session.roles.map((r) => (r === 'admin' ? '管理员' : r === 'teacher' ? '老师' : '学生')).join(' · ')}
                     </div>
                     <button
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setPwdOpen(true);
+                      }}
+                      className="w-full text-left px-3 py-2.5 text-[13px] text-ink dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all duration-150 ease-out cursor-pointer"
+                    >
+                      修改密码
+                    </button>
+                    <button
                       onClick={logout}
                       className="w-full text-left px-3 py-2.5 text-[13px] text-ink dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all duration-150 ease-out cursor-pointer"
                     >
@@ -144,6 +156,8 @@ function AppHeader() {
         </div>
       </div>
     </header>
+      {pwdOpen && <ChangePasswordModal open={pwdOpen} onClose={() => setPwdOpen(false)} />}
+    </>
   );
 }
 
@@ -166,5 +180,96 @@ function NavLink({ to, label }: { to: string; label: string }) {
         <span className="absolute bottom-0 left-3 right-3 h-0.5 bg-primary dark:bg-indigo-400 rounded-full" />
       )}
     </Link>
+  );
+}
+
+
+function ChangePasswordModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [oldPwd, setOldPwd] = useState('');
+  const [newPwd, setNewPwd] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [done, setDone] = useState(false);
+
+  const submit = async () => {
+    setError('');
+    if (newPwd.length < 6) { setError('新密码至少 6 位'); return; }
+    if (newPwd !== confirm) { setError('两次输入的新密码不一致'); return; }
+    setLoading(true);
+    try {
+      const resp = await fetch('/api/change-password', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oldPassword: oldPwd, newPassword: newPwd }),
+      });
+      const d = await resp.json().catch(() => ({}));
+      if (!resp.ok) { setError(d.error || '修改失败'); return; }
+      setDone(true);
+    } catch (e: any) {
+      setError(e.message || '修改失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40" onClick={done ? onClose : undefined}>
+      <div
+        className="w-full max-w-[380px] bg-white dark:bg-gray-900 border border-line dark:border-gray-800 rounded-card shadow-card p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-h3 font-semibold text-ink dark:text-gray-100">修改密码</h2>
+        {done ? (
+          <div className="mt-4">
+            <p className="text-[13px] text-ink-secondary dark:text-gray-400">
+              密码已修改，其他设备的登录状态已失效。请使用新密码重新登录。
+            </p>
+            <div className="mt-5 flex justify-end">
+              <Button
+                onClick={async () => {
+                  onClose();
+                  await fetch('/api/logout', { method: 'POST', credentials: 'include' });
+                  window.location.href = '/login';
+                }}
+              >
+                去重新登录
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-4 flex flex-col gap-3">
+            <input
+              type="password"
+              placeholder="旧密码"
+              value={oldPwd}
+              onChange={(e) => setOldPwd(e.target.value)}
+              className="h-10 px-3 rounded-btn border border-line dark:border-gray-700 bg-white dark:bg-gray-900 text-[14px]"
+            />
+            <input
+              type="password"
+              placeholder="新密码（至少 6 位）"
+              value={newPwd}
+              onChange={(e) => setNewPwd(e.target.value)}
+              className="h-10 px-3 rounded-btn border border-line dark:border-gray-700 bg-white dark:bg-gray-900 text-[14px]"
+            />
+            <input
+              type="password"
+              placeholder="确认新密码"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              className="h-10 px-3 rounded-btn border border-line dark:border-gray-700 bg-white dark:bg-gray-900 text-[14px]"
+            />
+            {error && <p className="text-[12px] text-red-500">{error}</p>}
+            <div className="mt-2 flex justify-end gap-2">
+              <Button variant="secondary" onClick={onClose}>取消</Button>
+              <Button loading={loading} onClick={submit}>确认修改</Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
