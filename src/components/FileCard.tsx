@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { FileImage, FileText, Presentation, FileType2 } from 'lucide-react';
+import { Download, FileImage, FileText, Presentation, FileType2 } from 'lucide-react';
 import { Badge } from './Badge';
 import { formatSize, formatTime, TYPE_LABELS } from '../utils/format';
 
@@ -53,7 +53,27 @@ export function FileCard({ file }: { file: ManifestFile }) {
           {file.visibility === 'published' ? '已开放' : '未开放'}
         </Badge>
       </div>
-      <p className="mt-3 text-[12px] text-ink-muted dark:text-gray-600">{TYPE_LABELS[file.type] ?? file.type}</p>
+
+      {/* 底部：类型标签 + 悬浮操作（预览 / 下载） */}
+      <div className="mt-3.5 pt-3 border-t border-line/60 dark:border-gray-800 flex items-center justify-between">
+        <p className="text-[12px] text-ink-muted dark:text-gray-600">{TYPE_LABELS[file.type] ?? file.type}</p>
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+          <span
+            className="h-7 px-2.5 inline-flex items-center rounded-full bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-300 text-[11.5px] font-medium"
+            title="点击卡片在线预览"
+          >
+            预览
+          </span>
+          <a
+            href={`/api/file?key=${encodeURIComponent(file.key)}&download=1`}
+            onClick={(e) => e.stopPropagation()}
+            title="下载"
+            className="h-7 w-7 inline-flex items-center justify-center rounded-full text-ink-muted dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-primary dark:hover:text-indigo-400 transition-colors duration-150"
+          >
+            <Download size={14} />
+          </a>
+        </div>
+      </div>
     </Link>
   );
 }

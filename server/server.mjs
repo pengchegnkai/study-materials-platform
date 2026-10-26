@@ -986,11 +986,13 @@ function apkSourceUrls(downloadUrl) {
   return [
     `https://ghfast.top/${url}`,
     `https://gh-proxy.com/${url}`,
+    `https://ghproxy.net/${url}`,
+    `https://gh.llkk.cc/${url}`,
     url,
   ];
 }
 
-/// 后台同步：从 GitHub 下载 APK 到本地缓存（防并发；完成后写 meta.json）
+/// 后台同步：从 GitHub 下载 APK 到本地缓存（镜像优先 + 断点续传 + 多轮重试）
 async function syncApkFromGitHub(remote) {
   if (_apkSyncing) return;
   _apkSyncing = true;
@@ -998,28 +1000,45 @@ async function syncApkFromGitHub(remote) {
     console.log('[apk] 开始同步安装包…');
     mkdirSync(APK_DIR, { recursive: true });
     const expected = remote.size || 0;
-    let lastErr = null;
-    for (const url of apkSourceUrls(remote.download)) {
+    const sources = apkSourceUrls(remote.download);
+    const tmp = APK_FILE + '.tmp';
+    const MAX_ATTEMPTS = 8;
+
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const url = sources[(attempt - 1) % sources.length];
       try {
+        // 断点续传：从已下载的字节继续
+        let resumeFrom = 0;
+        try {
+          resumeFrom = statSync(tmp).size;
+        } catch {}
+        if (expected > 0 && resumeFrom >= expected) {
+          // 上次其实已下完，只是没来得及 rename
+          renameSync(tmp, APK_FILE);
+          break;
+        }
+        const headers = { 'User-Agent': 'study-platform' };
+        if (resumeFrom > 0) headers.Range = `bytes=${resumeFrom}-`;
         const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 30 * 60 * 1000);
-        const resp = await fetch(url, { signal: ctrl.signal, redirect: 'follow' });
+        const timer = setTimeout(() => ctrl.abort(), 10 * 60 * 1000);
+        const resp = await fetch(url, { signal: ctrl.signal, redirect: 'follow', headers });
         clearTimeout(timer);
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        // 流式写盘，避免 70MB 全量占内存；每 10MB 打一条进度
-        const tmp = APK_FILE + '.tmp';
-        const out = createWriteStream(tmp);
+        if (!resp.ok && resp.status !== 206) throw new Error(`HTTP ${resp.status}`);
+
+        const out = createWriteStream(tmp, { flags: resumeFrom > 0 && resp.status === 206 ? 'a' : 'w' });
         const reader = resp.body.getReader();
-        let got = 0;
+        let got = resumeFrom;
+        let lastLog = got;
         for (;;) {
-          const { done, value } = await reader.read();
+          const { done, value: chunk } = await reader.read();
           if (done) break;
-          if (!Buffer.isBuffer(value)) value = Buffer.from(value);
-          got += value.length;
-          if (!out.write(value)) {
+          const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+          got += buf.length;
+          if (!out.write(buf)) {
             await new Promise((resolve) => out.once('drain', resolve));
           }
-          if (got % (10 * 1024 * 1024) < value.length) {
+          if (got - lastLog >= 10 * 1024 * 1024) {
+            lastLog = got;
             console.log(`[apk] 进度 ${(got / 1024 / 1024).toFixed(0)}MB`);
           }
         }
@@ -1027,9 +1046,11 @@ async function syncApkFromGitHub(remote) {
           out.end(resolve);
           out.on('error', reject);
         });
-        if (got < 1024 * 1024) throw new Error(`包体积异常 ${got}`);
-        if (expected > 0 && Math.abs(got - expected) > 1024 * 1024) {
-          throw new Error(`大小不符 期望${expected} 实际${got}`);
+
+        const finalSize = statSync(tmp).size;
+        if (finalSize < 1024 * 1024) throw new Error(`包体积异常 ${finalSize}`);
+        if (expected > 0 && Math.abs(finalSize - expected) > 1024 * 1024) {
+          throw new Error(`大小不符 期望${expected} 实际${finalSize}`);
         }
         renameSync(tmp, APK_FILE);
         writeFileSync(
@@ -1038,7 +1059,7 @@ async function syncApkFromGitHub(remote) {
             {
               version: remote.version,
               build: remote.build,
-              size: got,
+              size: finalSize,
               builtAt: remote.builtAt,
               syncedAt: Date.now(),
             },
@@ -1046,19 +1067,16 @@ async function syncApkFromGitHub(remote) {
             2
           )
         );
-        console.log('[apk] 已缓存', remote.version || 'unknown', got, 'bytes');
+        console.log('[apk] 已缓存', remote.version || 'unknown', finalSize, 'bytes');
         return;
       } catch (e) {
-        lastErr = e;
-        console.error(`[apk] 源失败 ${url.split('/')[2]}:`, String(e).slice(0, 120));
-        try {
-          unlinkSync(APK_FILE + '.tmp');
-        } catch {}
+        console.error(`[apk] 第${attempt}次尝试失败 ${url.split('/')[2]}:`, String(e).slice(0, 120), '（保留断点续传）');
+        await new Promise((r) => setTimeout(r, 3000));
       }
     }
-    throw lastErr || new Error('全部下载源失败');
+    console.error('[apk] 同步失败: 全部尝试用尽');
   } catch (e) {
-    console.error('[apk] 同步失败:', String(e).slice(0, 200));
+    console.error('[apk] 同步异常:', String(e).slice(0, 200));
   } finally {
     _apkSyncing = false;
   }
