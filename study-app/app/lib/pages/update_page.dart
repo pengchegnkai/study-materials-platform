@@ -24,7 +24,7 @@ class _UpdatePageState extends ConsumerState<UpdatePage> {
   String _localVersion = '—';
   int _localBuild = 0;
 
-  ({String version, int build, int size, String builtAt, String download, bool ready, bool syncing})? _latest;
+  ({String version, int build, int size, String builtAt, String download, bool ready, bool syncing, String sha256})? _latest;
   bool _checking = true;
   String? _error;
 
@@ -67,6 +67,7 @@ class _UpdatePageState extends ConsumerState<UpdatePage> {
           download: '${d['download'] ?? ''}',
           ready: d['ready'] == true,
           syncing: d['syncing'] == true,
+          sha256: '${d['sha256'] ?? ''}',
         );
         _checking = false;
       });
