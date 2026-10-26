@@ -124,6 +124,12 @@ jobs:
           set -o pipefail
           flutter build apk --release 2>&1 | tee ../build.log
 
+      - name: 导出生成的 app build.gradle.kts（排障用）
+        if: always()
+        working-directory: .
+        run: |
+          cp build_tmp/android/app/build.gradle.kts study-app/generated-app-build.gradle.kts 2>/dev/null || echo '// 未生成' > study-app/generated-app-build.gradle.kts
+
       - name: Upload build logs（无论成败）
         if: always()
         uses: actions/upload-artifact@v4
@@ -132,6 +138,7 @@ jobs:
           path: |
             study-app/analyze.log
             study-app/build.log
+            study-app/generated-app-build.gradle.kts
           if-no-files-found: ignore
 
       - name: 失败时输出关键错误到 Step Summary 与 Annotations
