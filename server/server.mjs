@@ -10,7 +10,7 @@ import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { DatabaseSync } from 'node:sqlite';
 import { webcrypto as crypto, createHmac, createHash, randomBytes } from 'node:crypto';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, createWriteStream, unlinkSync, statSync, renameSync, copyFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, createWriteStream, unlinkSync, statSync, renameSync, copyFileSync, openSync, readSync, closeSync } from 'node:fs';
 import { createReadStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
@@ -968,6 +968,7 @@ async function fetchRemoteAppInfo() {
       version: version || '',
       build: Number(read('build') || 0) || 0,
       size: Number(read('size') || 0) || asset?.size || 0,
+      sha256: read('sha256').toLowerCase() || '',
       builtAt: read('builtAt') || rel.published_at || '',
       download: APP_APK_URL,
       notes: body.slice(0, 500),
@@ -1048,10 +1049,48 @@ async function syncApkFromGitHub(remote) {
         });
 
         const finalSize = statSync(tmp).size;
-        if (finalSize < 1024 * 1024) throw new Error(`包体积异常 ${finalSize}`);
-        if (expected > 0 && Math.abs(finalSize - expected) > 1024 * 1024) {
-          throw new Error(`大小不符 期望${expected} 实际${finalSize}`);
+        // ---------- 完整性校验：全部通过才允许入库分发 ----------
+        // ① 精确大小
+        if (expected > 0 && finalSize !== expected) {
+          throw new Error(`大小校验失败 期望${expected} 实际${finalSize}`);
         }
+        // ② APK（zip）文件头 PK\x03\x04
+        const head = Buffer.alloc(4);
+        {
+          const fd = openSync(tmp, 'r');
+          try {
+            readSync(fd, head, 0, 4, 0);
+          } finally {
+            closeSync(fd);
+          }
+        }
+        if (!(head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04)) {
+          throw new Error('文件头校验失败：不是有效的 APK/zip 文件');
+        }
+        // ③ SHA-256（Release 说明提供期望值时严格比对；未提供则只做①②并记录实测值）
+        let actualSha = '';
+        {
+          const hash = createHash('sha256');
+          const fd = openSync(tmp, 'r');
+          const chunk = Buffer.alloc(1024 * 1024);
+          try {
+            for (;;) {
+              const n = readSync(fd, chunk, 0, chunk.length, null);
+              if (n === 0) break;
+              hash.update(n === chunk.length ? chunk : chunk.subarray(0, n));
+            }
+          } finally {
+            closeSync(fd);
+          }
+          actualSha = hash.digest('hex');
+        }
+        if (remote.sha256 && actualSha !== remote.sha256) {
+          throw new Error(`SHA-256 校验失败 期望${remote.sha256.slice(0, 16)}… 实际${actualSha.slice(0, 16)}…`);
+        }
+        if (!remote.sha256) {
+          console.warn('[apk] Release 未提供 sha256，已按大小+文件头校验放行');
+        }
+        // ---------- 校验全部通过：入库并对外分发 ----------
         renameSync(tmp, APK_FILE);
         writeFileSync(
           APK_META_FILE,
@@ -1060,6 +1099,8 @@ async function syncApkFromGitHub(remote) {
               version: remote.version,
               build: remote.build,
               size: finalSize,
+              sha256: actualSha,
+              verified: true,
               builtAt: remote.builtAt,
               syncedAt: Date.now(),
             },
@@ -1067,7 +1108,7 @@ async function syncApkFromGitHub(remote) {
             2
           )
         );
-        console.log('[apk] 已缓存', remote.version || 'unknown', finalSize, 'bytes');
+        console.log('[apk] 完整性校验通过，已入库', remote.version || 'unknown', finalSize, 'sha256', actualSha.slice(0, 12));
         return;
       } catch (e) {
         console.error(`[apk] 第${attempt}次尝试失败 ${url.split('/')[2]}:`, String(e).slice(0, 120), '（保留断点续传）');
@@ -1111,11 +1152,12 @@ app.get('/api/app/latest', async (c) => {
 
   let info;
   if (remote) info = { ...remote };
-  else if (apkReady) info = { version: local.version, build: local.build, size: local.size, builtAt: local.builtAt, notes: '' };
+  else if (apkReady) info = { version: local.version, build: local.build, size: local.size, sha256: local.sha256 || '', builtAt: local.builtAt, notes: '' };
   else return c.json({ version: '', build: 0, size: 0, builtAt: '', download: '', ready: false, syncing: false, notes: '版本信息暂不可用', source: 'none' });
 
   return c.json({
     ...info,
+    sha256: info.sha256 || local?.sha256 || '',
     download: apkReady ? 'app/download' : APP_APK_URL, // 客户端 dio 会拼到 <host>/api/app/download
     ready: apkReady && !stale,
     syncing: _apkSyncing,

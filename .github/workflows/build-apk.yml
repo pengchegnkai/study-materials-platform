@@ -193,10 +193,12 @@ jobs:
           VER="1.0.0-beta.${GITHUB_RUN_ID}"
           ELAPSED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           SIZE=$(stat -c%s study-app-latest.apk)
+          SHA=$(sha256sum study-app-latest.apk | awk '{print $1}')
           {
             echo "version=${VER}"
             echo "build=${GITHUB_RUN_NUMBER}"
             echo "size=${SIZE}"
+            echo "sha256=${SHA}"
             echo "builtAt=${ELAPSED}"
             echo "commit=${GITHUB_SHA::7}"
             echo "download=https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/study-app-latest.apk"
