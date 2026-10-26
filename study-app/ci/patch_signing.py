@@ -4,6 +4,8 @@
 不再依赖「~/.android/debug.keystore 默认路径」这一隐式行为（实测未生效，
 每个 runner 各自随机生成签名导致覆盖安装冲突）。keystore 文件由 workflow
 解码到 build.gradle.kts 同目录（ci.keystore），file() 相对路径即可解析。
+
+注意：注入用 str.replace 而非 re.sub，避免 \1 转义陷阱丢失捕获组。
 """
 import sys
 
@@ -12,38 +14,34 @@ def main(path: str) -> None:
     with open(path, encoding="utf-8") as f:
         s = f.read()
 
-    if "signingConfigs" in s and "ci.keystore" in s:
+    if "ci.keystore" in s:
         print("signing 已注入，跳过")
         return
 
-    signing = """
-    // CI: 固定签名（防覆盖安装冲突），keystore 由 workflow 解码到同目录
-    signingConfigs {
-        create("ci") {
-            storeFile = file("ci.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
-        }
-    }
-"""
-    # 在 android { 块开头插入 signingConfigs
-    import re
-    s2 = re.sub(r"(android\s*\{)", r"\1" + signing, s, count=1)
-    if s2 == s:
+    signing = (
+        "\n"
+        "    // CI: 固定签名（防覆盖安装冲突），keystore 由 workflow 解码到同目录\n"
+        "    signingConfigs {\n"
+        '        create("ci") {\n'
+        '            storeFile = file("ci.keystore")\n'
+        '            storePassword = "android"\n'
+        '            keyAlias = "androiddebugkey"\n'
+        '            keyPassword = "android"\n'
+        "        }\n"
+        "    }"
+    )
+    if "android {" not in s:
         raise SystemExit("未找到 android { 块，注入失败")
+    s = s.replace("android {", "android {" + signing, 1)
 
-    # release / debug 构建类型都指向固定签名（兼容 kts 的 release { 与 getByName("release") { 两种写法）
-    for name in ("release", "debug"):
-        s2 = re.sub(
-            rf"(\b{name}\s*\{{)",
-            '\1\n            signingConfig = signingConfigs.getByName("ci")',
-            s2,
-            count=1,
-        )
+    # buildTypes.release 指向固定签名（当前模板 buildTypes 内只有 release 块）
+    release_line = '            signingConfig = signingConfigs.getByName("ci")\n'
+    if "release {" not in s:
+        raise SystemExit("未找到 release { 块，注入失败")
+    s = s.replace("release {", "release {\n" + release_line, 1)
 
     with open(path, "w", encoding="utf-8") as f:
-        f.write(s2)
+        f.write(s)
     print("已注入固定签名配置:", path)
 
 
