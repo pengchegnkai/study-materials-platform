@@ -4,11 +4,13 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:crypto/crypto.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../core/api_client.dart';
+import '../core/config.dart';
 import '../utils/format.dart';
 
 class UpdatePage extends ConsumerStatefulWidget {
@@ -85,14 +87,19 @@ class _UpdatePageState extends ConsumerState<UpdatePage> {
     return l.version.isNotEmpty && l.version != _localVersion;
   }
 
+  /// 分块下载（Range 断点续传）+ SHA-256 完整性校验，全部通过才调起安装。
+  /// 公网长下载可能被中间网络截断，分块 + 校验保证永远不会装上损坏的包。
   Future<void> _download() async {
     final l = _latest;
     if (l == null || l.download.isEmpty) return;
-    // 安装包由服务器分发：未同步完成时提示稍后
     if (!l.ready) {
       _toast(l.syncing ? '新版本正在同步到服务器，请稍后再试' : '安装包暂未就绪，请稍后重新检查');
       return;
     }
+    final expected = l.size;
+    final expectSha = l.sha256;
+    final url = '${AppConfig.apiBase}/app/download'; // 绝对地址，避免相对路径解析歧义
+
     setState(() {
       _downloading = true;
       _progress = 0;
@@ -110,32 +117,80 @@ class _UpdatePageState extends ConsumerState<UpdatePage> {
       } catch (_) {}
       target ??= await getApplicationDocumentsDirectory();
       final path = '${target.path}/study-app-${l.version.isEmpty ? 'latest' : l.version}.apk';
+      final f = File(path);
 
-      await ApiClient().dio.download(
-        l.download,
-        path,
-        onReceiveProgress: (rec, total) {
-          if (total > 0 && mounted) {
-            setState(() => _progress = rec / total);
+      const maxAttempts = 3;
+      String? lastError;
+      for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+        // ---- 分块下载直至达到期望大小（利用服务器 Range/206 断点续传） ----
+        const chunkSize = 4 * 1024 * 1024;
+        var guard = 0;
+        while (true) {
+          guard++;
+          if (guard > 200) throw Exception('下载分块次数异常，已中止');
+          var start = await f.exists() ? await f.length() : 0;
+          if (expected > 0 && start >= expected) break;
+          final end = expected > 0
+              ? (start + chunkSize - 1).clamp(0, expected - 1)
+              : start + chunkSize - 1;
+          final resp = await ApiClient().dio.get<List<int>>(
+            url,
+            options: Options(
+              headers: expected > 0 ? {'Range': 'bytes=$start-$end'} : null,
+              responseType: ResponseType.bytes,
+              receiveTimeout: const Duration(minutes: 5),
+              validateStatus: (s) => s != null && (s == 200 || s == 206),
+            ),
+          );
+          final data = resp.data ?? const <int>[];
+          if (data.isEmpty) {
+            throw Exception('服务器返回空分片（HTTP ${resp.statusCode}）');
           }
-        },
-        options: Options(
-          receiveTimeout: const Duration(minutes: 10),
-          followRedirects: true,
-        ),
-        deleteOnError: true,
-      );
-      if (!mounted) return;
-      setState(() {
-        _downloading = false;
-        _savedPath = path;
-      });
-      // 调起系统安装器（覆盖安装，签名一致时保留数据）
-      final result = await OpenFilex.open(path);
-      if (!mounted) return;
-      if (result.type != ResultType.done) {
-        _toast('已下载到 $path，请手动点击安装（需允许安装未知应用）');
+          if (resp.statusCode == 200 && start > 0) {
+            // 服务器忽略了 Range：丢弃已有内容重写
+            await f.writeAsBytes(data, flush: true);
+          } else {
+            await f.writeAsBytes(data, mode: FileMode.append, flush: true);
+          }
+          if (expected <= 0) break; // 大小未知时一次拿全即可
+          if (mounted) {
+            final len = await f.length();
+            setState(() => _progress = (len / expected).clamp(0.0, 1.0));
+          }
+        }
+
+        // ---- SHA-256 完整性校验：通过才允许安装 ----
+        if (expectSha.isNotEmpty) {
+          final digest = await sha256.bind(f.openRead()).first;
+          final actual = digest.toString();
+          if (actual != expectSha) {
+            lastError = '完整性校验失败（SHA-256 不匹配）';
+            await f.delete();
+            if (mounted) setState(() => _progress = 0);
+            continue;
+          }
+        } else if (expected > 0 && await f.length() != expected) {
+          lastError = '大小校验失败';
+          await f.delete();
+          if (mounted) setState(() => _progress = 0);
+          continue;
+        }
+
+        // ---- 校验通过：调起系统安装器（覆盖安装保留数据） ----
+        if (!mounted) return;
+        setState(() {
+          _downloading = false;
+          _savedPath = path;
+          _progress = 1;
+        });
+        final result = await OpenFilex.open(path);
+        if (!mounted) return;
+        if (result.type != ResultType.done) {
+          _toast('已下载到 $path，请手动点击安装（需允许安装未知应用）');
+        }
+        return;
       }
+      throw Exception('${lastError ?? '下载失败'}，已重试 $maxAttempts 次');
     } catch (e) {
       if (!mounted) return;
       setState(() {

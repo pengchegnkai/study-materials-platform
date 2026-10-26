@@ -1165,19 +1165,49 @@ app.get('/api/app/latest', async (c) => {
   });
 });
 
-// 安装包下载（服务器分发）
+// 安装包下载（服务器分发；支持 Range 断点续传，公网长下载被中断后可分片恢复）
 app.get('/api/app/download', (c) => {
   if (!existsSync(APK_FILE)) {
     return c.json({ error: '安装包尚未同步到服务器，请稍后重试' }, 503);
   }
   const stat = statSync(APK_FILE);
+  const total = stat.size;
+  const baseHeaders = {
+    'Content-Type': 'application/vnd.android.package-archive',
+    'Content-Disposition': 'attachment; filename="study-app-latest.apk"',
+    'Cache-Control': 'no-store',
+    'Accept-Ranges': 'bytes',
+  };
+
+  // Range: bytes=start- 或 bytes=start-end（客户端分块续传用）
+  const range = c.req.header('Range') || c.req.header('range') || '';
+  const m = range.match(/^bytes=(\d*)-(\d*)$/);
+  if (m && (m[1] !== '' || m[2] !== '')) {
+    let start = m[1] === '' ? 0 : parseInt(m[1], 10);
+    let end = m[2] === '' ? total - 1 : parseInt(m[2], 10);
+    if (Number.isNaN(start) || Number.isNaN(end) || start > end || start >= total) {
+      return new Response(null, {
+        status: 416,
+        headers: { 'Content-Range': `bytes */${total}` },
+      });
+    }
+    end = Math.min(end, total - 1);
+    const stream = createReadStream(APK_FILE, { start, end });
+    return new Response(Readable.toWeb(stream), {
+      status: 206,
+      headers: {
+        ...baseHeaders,
+        'Content-Range': `bytes ${start}-${end}/${total}`,
+        'Content-Length': String(end - start + 1),
+      },
+    });
+  }
+
   const stream = createReadStream(APK_FILE);
   return new Response(Readable.toWeb(stream), {
     headers: {
-      'Content-Type': 'application/vnd.android.package-archive',
-      'Content-Length': String(stat.size),
-      'Content-Disposition': 'attachment; filename="study-app-latest.apk"',
-      'Cache-Control': 'no-store',
+      ...baseHeaders,
+      'Content-Length': String(total),
     },
   });
 });

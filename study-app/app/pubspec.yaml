@@ -27,6 +27,8 @@ dependencies:
   permission_handler: ^11.3.0
   # 滚动更新：读自身版本 + 调起 APK 安装
   package_info_plus: ^8.0.0
+  # 更新包 SHA-256 完整性校验
+  crypto: ^3.0.3
   open_filex: ^4.4.0
   share_plus: ^7.2.1
   # Office 预览：xlsx 表格解析 + zip 解包（docx/pptx 文本提取）
