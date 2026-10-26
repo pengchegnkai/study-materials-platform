@@ -1050,9 +1050,12 @@ async function syncApkFromGitHub(remote) {
 
         const finalSize = statSync(tmp).size;
         // ---------- 完整性校验：全部通过才允许入库分发 ----------
-        // ① 精确大小
-        if (expected > 0 && finalSize !== expected) {
+        // ① 大小：Release 元数据的 size 与上传产物偶有出入（SHA256 才权威），仅在无 sha256 期望时作硬校验
+        if (!remote.sha256 && expected > 0 && finalSize !== expected) {
           throw new Error(`大小校验失败 期望${expected} 实际${finalSize}`);
+        }
+        if (remote.sha256 && expected > 0 && finalSize !== expected) {
+          console.warn(`[apk] size 元数据偏差（声明${expected} 实际${finalSize}），以 SHA-256 为准`);
         }
         // ② APK（zip）文件头 PK\x03\x04
         const head = Buffer.alloc(4);

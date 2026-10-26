@@ -123,21 +123,20 @@ class _UpdatePageState extends ConsumerState<UpdatePage> {
       const maxAttempts = 3;
       String? lastError;
       for (var attempt = 1; attempt <= maxAttempts; attempt++) {
-        // ---- 分块下载直至达到期望大小（利用服务器 Range/206 断点续传） ----
+        // ---- 分块下载至文件尾（Range/206 断点续传） ----
+        // 注意：以「分片数据不足一片」判定 EOF，size 元数据与实际产物偶有偏差不可作为退出依据，
+        // 完整性一律以 SHA-256 为权威。
         const chunkSize = 4 * 1024 * 1024;
         var guard = 0;
-        while (true) {
+        var eof = false;
+        while (!eof) {
           guard++;
-          if (guard > 200) throw Exception('下载分块次数异常，已中止');
-          var start = await f.exists() ? await f.length() : 0;
-          if (expected > 0 && start >= expected) break;
-          final end = expected > 0
-              ? (start + chunkSize - 1).clamp(0, expected - 1)
-              : start + chunkSize - 1;
+          if (guard > 500) throw Exception('下载分块次数异常，已中止');
+          final start = await f.exists() ? await f.length() : 0;
           final resp = await ApiClient().dio.get<List<int>>(
             url,
             options: Options(
-              headers: expected > 0 ? {'Range': 'bytes=$start-$end'} : null,
+              headers: {'Range': 'bytes=$start-${start + chunkSize - 1}'},
               responseType: ResponseType.bytes,
               receiveTimeout: const Duration(minutes: 5),
               validateStatus: (s) => s != null && (s == 200 || s == 206),
@@ -153,10 +152,14 @@ class _UpdatePageState extends ConsumerState<UpdatePage> {
           } else {
             await f.writeAsBytes(data, mode: FileMode.append, flush: true);
           }
-          if (expected <= 0) break; // 大小未知时一次拿全即可
+          if (data.length < chunkSize) eof = true; // 不足一片 = 已到文件尾
           if (mounted) {
             final len = await f.length();
-            setState(() => _progress = (len / expected).clamp(0.0, 1.0));
+            if (expected > 0) {
+              setState(() => _progress = (len / expected).clamp(0.0, 0.99));
+            } else {
+              setState(() => _progress = 0.5);
+            }
           }
         }
 
