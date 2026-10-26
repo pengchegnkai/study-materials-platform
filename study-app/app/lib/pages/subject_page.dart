@@ -41,7 +41,7 @@ class _SubjectPageState extends ConsumerState<SubjectPage> {
   }
 
   String _previewType(FileItem f) {
-    final type = (f.contentType ?? '').toLowerCase();
+    final type = f.type.toLowerCase();
     final ext = f.key.split('.').last.toLowerCase();
     if (type == 'markdown' || type.contains('markdown') || ['md', 'markdown'].contains(ext)) return 'markdown';
     if (type == 'image' || type.startsWith('image/') || ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].contains(ext)) return 'image';
@@ -51,7 +51,7 @@ class _SubjectPageState extends ConsumerState<SubjectPage> {
     return 'other';
   }
 
-  void _openPreview(AdminFile f) {
+  void _openPreview(FileItem f) {
     context.push(
       '/preview?key=${Uri.encodeComponent(f.key)}'
       '&title=${Uri.encodeComponent(f.title)}'
