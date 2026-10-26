@@ -1052,7 +1052,10 @@ async function syncApkFromGitHub(remote) {
         // ---------- 完整性校验：全部通过才允许入库分发 ----------
         // ① 大小：Release 元数据的 size 与上传产物偶有出入（SHA256 才权威），仅在无 sha256 期望时作硬校验
         if (!remote.sha256 && expected > 0 && finalSize !== expected) {
-          throw new Error(`大小校验失败 期望${expected} 实际${finalSize}`);
+          try {
+            unlinkSync(tmp);
+          } catch {}
+          throw new Error(`大小校验失败（断点已删除）期望${expected} 实际${finalSize}`);
         }
         if (remote.sha256 && expected > 0 && finalSize !== expected) {
           console.warn(`[apk] size 元数据偏差（声明${expected} 实际${finalSize}），以 SHA-256 为准`);
@@ -1068,7 +1071,10 @@ async function syncApkFromGitHub(remote) {
           }
         }
         if (!(head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04)) {
-          throw new Error('文件头校验失败：不是有效的 APK/zip 文件');
+          try {
+            unlinkSync(tmp);
+          } catch {}
+          throw new Error('文件头校验失败：不是有效的 APK/zip 文件（断点已删除）');
         }
         // ③ SHA-256（Release 说明提供期望值时严格比对；未提供则只做①②并记录实测值）
         let actualSha = '';
@@ -1088,7 +1094,11 @@ async function syncApkFromGitHub(remote) {
           actualSha = hash.digest('hex');
         }
         if (remote.sha256 && actualSha !== remote.sha256) {
-          throw new Error(`SHA-256 校验失败 期望${remote.sha256.slice(0, 16)}… 实际${actualSha.slice(0, 16)}…`);
+          // 校验失败 = 本地数据已损坏（镜像断点续传内容不可信），删除断点从头下载
+          try {
+            unlinkSync(tmp);
+          } catch {}
+          throw new Error(`SHA-256 校验失败（已删除损坏断点）期望${remote.sha256.slice(0, 16)}… 实际${actualSha.slice(0, 16)}…`);
         }
         if (!remote.sha256) {
           console.warn('[apk] Release 未提供 sha256，已按大小+文件头校验放行');

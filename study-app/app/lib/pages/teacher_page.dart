@@ -22,6 +22,9 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
   final _titleCtrl = TextEditingController();
 
   String _visibility = 'private';
+  String _uploadSubject = ''; // 上传目标科目 id（网页端同款：上传前先选科目）
+  String _filterSubject = ''; // 文件列表筛选：科目
+  String _filterState = 'all'; // 文件列表筛选：开放状态
   bool _uploading = false;
   bool _loadingFiles = true;
   ({int current, int total, int pct, String name})? _progress;
@@ -57,29 +60,6 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
     } catch (_) {
       if (mounted) setState(() => _loadingFiles = false);
     }
-  }
-
-  Future<List<Subject>?> _pickSubject() async {
-    final subjects = await _svc.subjects(mine: true);
-    if (!mounted) return null;
-    String? subjectId;
-    await showDialog(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('上传到哪个科目？'),
-        children: subjects
-            .map((s) => SimpleDialogOption(
-                  onPressed: () {
-                    subjectId = s.id;
-                    Navigator.pop(ctx);
-                  },
-                  child: Text(s.name),
-                ))
-            .toList(),
-      ),
-    );
-    if (subjectId == null) return null;
-    return subjects.where((s) => s.id == subjectId).toList();
   }
 
   /// 上传一批文件，dir 为服务器虚拟目录；带逐文件与单文件进度
@@ -127,11 +107,13 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
     _loadFiles();
   }
 
-  /// 多选文件上传
+  /// 多选文件上传（使用上传设置卡中已选科目）
   Future<void> _pickAndUpload([String dir = '']) async {
-    final subjects = await _pickSubject();
-    if (subjects == null || subjects.isEmpty || !mounted) return;
-    final subjectId = subjects.first.id;
+    if (_uploadSubject.isEmpty) {
+      _toast('请先在上方选择上传科目');
+      return;
+    }
+    final subjectId = _uploadSubject;
 
     final result = await FilePicker.platform.pickFiles(allowMultiple: true);
     if (result == null || result.files.isEmpty || !mounted) return;
@@ -163,10 +145,12 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
 
   /// 选择整个文件夹，递归上传（目录规则：科目名/相对路径，不含所选根文件夹名本身）
   Future<void> _pickFolderAndUpload() async {
-    final subjects = await _pickSubject();
-    if (subjects == null || subjects.isEmpty || !mounted) return;
-    final subjectId = subjects.first.id;
-    final subjectName = subjects.first.name;
+    if (_uploadSubject.isEmpty) {
+      _toast('请先在上方选择上传科目');
+      return;
+    }
+    final subjectId = _uploadSubject;
+    final subjectName = _subjects.where((x) => x.id == _uploadSubject).map((x) => x.name).first ?? '';
 
     final dirPath = await FilePicker.platform.getDirectoryPath();
     if (dirPath == null || !mounted) return;
@@ -274,6 +258,14 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
 
   @override
   Widget build(BuildContext context) {
+    // 筛选
+    final visibleFiles = _myFiles.where((f) {
+      if (_filterSubject.isNotEmpty && f.subject != _filterSubject) return false;
+      if (_filterState == 'published' && f.visibility != 'published') return false;
+      if (_filterState == 'private' && f.visibility != 'private') return false;
+      return true;
+    }).toList();
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('老师工作台'),
@@ -290,187 +282,308 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // 上传设置卡片
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: LayoutBuilder(
-                  builder: (context, c) {
-                    final narrow = c.maxWidth < 560;
-                    final title = const Column(
+      body: _loadingFiles
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                const Text('老师工作台',
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, letterSpacing: -0.3)),
+                const SizedBox(height: 4),
+                const Text('上传资料到你的科目，并控制是否对学生开放',
+                    style: TextStyle(fontSize: 13, color: Color(0xFF6B7280))),
+                const SizedBox(height: 16),
+
+                // ---------- 上传设置卡（网页端同款） ----------
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('上传设置', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-                        SizedBox(height: 4),
-                        Text('上传后按可见性决定学生是否可查看',
-                            style: TextStyle(fontSize: 12, color: Color(0xFF9CA3AF))),
-                      ],
-                    );
-                    final visibility = SegmentedButton<String>(
-                      segments: const [
-                        ButtonSegment(value: 'private', label: Text('不开放')),
-                        ButtonSegment(value: 'published', label: Text('开放')),
-                      ],
-                      selected: {_visibility},
-                      onSelectionChanged: (s) => setState(() => _visibility = s.first),
-                      style: const ButtonStyle(
-                        visualDensity: VisualDensity.compact,
-                        textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 12)),
-                      ),
-                    );
-                    final uploadBtn = FilledButton.icon(
-                      onPressed: _uploading ? null : _pickAndUpload,
-                      icon: _uploading
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                          : const Icon(Icons.upload_file_outlined, size: 18),
-                      label: Text(_uploading ? '上传中…' : '上传文件'),
-                    );
-                    final folderBtn = OutlinedButton.icon(
-                      onPressed: _uploading ? null : _pickFolderAndUpload,
-                      icon: const Icon(Icons.folder_open_outlined, size: 18),
-                      label: const Text('上传文件夹'),
-                    );
-                    if (narrow) {
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          title,
-                          const SizedBox(height: 12),
-                          Row(
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _webSelect(
+                                label: '上传到科目',
+                                value: _uploadSubject,
+                                items: [
+                                  const DropdownMenuItem(value: '', child: Text('选择科目…')),
+                                  ..._subjects.map((x) => DropdownMenuItem(value: x.id, child: Text(x.name))),
+                                ],
+                                onChanged: (v) => setState(() => _uploadSubject = v ?? ''),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _webSelect(
+                                label: '可见性',
+                                value: _visibility,
+                                items: const [
+                                  DropdownMenuItem(value: 'private', child: Text('不开放（仅自己可见）')),
+                                  DropdownMenuItem(value: 'published', child: Text('开放（学生可见）')),
+                                ],
+                                onChanged: (v) => setState(() => _visibility = v ?? 'private'),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        // 上传区（网页 UploadZone 同款：大虚线区域 + 图标 + 按钮）
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF9FAFB),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: const Color(0xFFD1D5DB), width: 1.2),
+                          ),
+                          child: Column(
                             children: [
-                              visibility,
-                              const Spacer(),
+                              const Icon(Icons.cloud_upload_outlined,
+                                  size: 44, color: Color(0xFF9CA3AF)),
+                              const SizedBox(height: 10),
+                              const Text('点击下方按钮选择要上传的资料',
+                                  style: TextStyle(fontSize: 13.5, color: Color(0xFF6B7280))),
+                              const SizedBox(height: 4),
+                              const Text('支持 Word / PPT / Excel / PDF / 图片 / Markdown',
+                                  style: TextStyle(fontSize: 11.5, color: Color(0xFF9CA3AF))),
+                              const SizedBox(height: 14),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  FilledButton.icon(
+                                    onPressed: _uploading ? null : _pickAndUpload,
+                                    icon: _uploading
+                                        ? const SizedBox(
+                                            width: 15, height: 15,
+                                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                        : const Icon(Icons.upload_file_outlined, size: 17),
+                                    label: Text(_uploading ? '上传中…' : '上传文件'),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  OutlinedButton.icon(
+                                    onPressed: _uploading ? null : _pickFolderAndUpload,
+                                    icon: const Icon(Icons.folder_open_outlined, size: 17),
+                                    label: const Text('上传文件夹'),
+                                  ),
+                                ],
+                              ),
                             ],
                           ),
+                        ),
+                        if (_progress != null) ...[
                           const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Expanded(child: uploadBtn),
-                              const SizedBox(width: 8),
-                              Expanded(child: folderBtn),
-                            ],
+                          Text(
+                            '上传中 ${_progress!.current}/${_progress!.total} · ${_progress!.name}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
                           ),
-                        ],
-                      );
-                    }
-                    return Row(
-                      children: [
-                        Expanded(child: title),
-                        visibility,
-                        const SizedBox(width: 12),
-                        uploadBtn,
-                        const SizedBox(width: 8),
-                        folderBtn,
-                      ],
-                    );
-                  },
-                ),
-              ),
-            ),
-          ),
-          if (_progress != null)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              '上传中 ${_progress!.current}/${_progress!.total} · ${_progress!.name}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 12),
+                          const SizedBox(height: 6),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: LinearProgressIndicator(
+                              value: _progress!.pct / 100,
+                              minHeight: 8,
+                              backgroundColor: const Color(0xFFE5E7EB),
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          Text('${_progress!.pct}%', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                         ],
-                      ),
-                      const SizedBox(height: 6),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: LinearProgressIndicator(
-                          value: _progress!.pct / 100,
-                          minHeight: 6,
-                          backgroundColor: const Color(0xFFE5E7EB),
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
+                const SizedBox(height: 20),
+
+                // ---------- 我的文件（网页端同款：筛选下拉 + 卡片列表） ----------
+                const Text('我的文件',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _webSelect(
+                        value: _filterSubject,
+                        items: [
+                          const DropdownMenuItem(value: '', child: Text('全部科目')),
+                          ..._subjects.map((x) => DropdownMenuItem(value: x.name, child: Text(x.name))),
+                        ],
+                        onChanged: (v) => setState(() => _filterSubject = v ?? ''),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _webSelect(
+                        value: _filterState,
+                        items: const [
+                          DropdownMenuItem(value: 'all', child: Text('全部状态')),
+                          DropdownMenuItem(value: 'published', child: Text('已开放')),
+                          DropdownMenuItem(value: 'private', child: Text('未开放')),
+                        ],
+                        onChanged: (v) => setState(() => _filterState = v ?? 'all'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (visibleFiles.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 48),
+                    child: Center(
+                        child: Text('暂无文件，先上传一份吧',
+                            style: TextStyle(fontSize: 13, color: Color(0xFF6B7280)))),
+                  )
+                else
+                  ...visibleFiles.map((f) => Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _MyFileCard(
+                          file: f,
+                          onToggle: () => _toggleVisibility(f),
+                          onEdit: () => _editTitleDialog(f),
+                          onDelete: () => _delete(f),
+                        ),
+                      )),
+              ],
             ),
-          // 资源管理器风格的文件列表
-          Expanded(
-            child: _loadingFiles
-                ? const Center(child: CircularProgressIndicator())
-                : FileManager(
-                    files: _myFiles.map(_toAdminFile).toList(),
-                    folders: _folders,
-                    onDelete: _delete,
-                    onToggleVisibility: _toggleVisibility,
-                    onRename: _rename,
-                    onCreateFolder: (path) async {
-                      try {
-                        await _svc.createFolder(path: path);
-                        _loadFiles();
-                      } catch (e) {
-                        _toast('创建失败：$e'.replaceFirst('Exception: ', ''));
-                      }
-                    },
-                    onUpload: (dir) => _pickAndUpload(dir),
-                    onMoveCopy: (items, action, targetDir) async {
-                      var ok = 0, fail = 0;
-                      String? firstError;
-                      for (final f in items) {
-                        try {
-                          if (action == 'move') {
-                            await _svc.moveFile(f.key, targetDir);
-                          } else {
-                            await _svc.copyFile(f.key, targetDir);
-                          }
-                          ok++;
-                        } catch (e) {
-                          fail++;
-                          firstError ??= '$e'.replaceFirst('Exception: ', '');
-                        }
-                      }
-                      _loadFiles();
-                      _toast(fail == 0 ? '已${action == 'move' ? '移动' : '复制'} $ok 项' : '成功 $ok 项，失败 $fail 项：$firstError');
-                    },
-                    onDeleteFolder: (path) async {
-                      try {
-                        await _svc.deleteFolder(path);
-                        _loadFiles();
-                      } catch (e) {
-                        _toast('删除失败：$e'.replaceFirst('Exception: ', ''));
-                      }
-                    },
-                    onMoveFolder: (path, targetDir) async {
-                      try {
-                        await _svc.moveFolder(path, targetDir);
-                        _loadFiles();
-                      } catch (e) {
-                        _toast('移动失败：$e'.replaceFirst('Exception: ', ''));
-                      }
-                    },
-                    subjects: _subjects,
-                    canManage: true,
-                  ),
-          ),
+    );
+  }
+
+  /// 网页 Select 同款下拉框（带标签 + 圆角边框）
+  Widget _webSelect({
+    String? label,
+    required String value,
+    required List<DropdownMenuItem<String>> items,
+    required ValueChanged<String?> onChanged,
+  }) {
+    final field = DropdownButtonFormField<String>(
+      value: value,
+      isExpanded: true,
+      decoration: InputDecoration(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF4F46E5), width: 1.5)),
+      ),
+      items: items,
+      onChanged: onChanged,
+    );
+    if (label == null) return field;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500, color: Color(0xFF374151))),
+        const SizedBox(height: 6),
+        field,
+      ],
+    );
+  }
+
+  /// 编辑文件标题
+  Future<void> _editTitleDialog(AdminFile f) async {
+    final ctrl = TextEditingController(text: f.title);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('重命名'),
+        content: TextField(controller: ctrl, autofocus: true),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('保存')),
         ],
+      ),
+    );
+    if (ok != true) return;
+    final t = ctrl.text.trim();
+    if (t.isEmpty || t == f.title) return;
+    await _rename(f, t);
+  }
+}
+
+/// 我的文件卡：网页端 md:hidden 卡片同款（标题+徽标 / meta / 开关+编辑+删除）
+class _MyFileCard extends StatelessWidget {
+  final AdminFile file;
+  final VoidCallback onToggle;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  const _MyFileCard({required this.file, required this.onToggle, required this.onEdit, required this.onDelete});
+
+  String _fmtSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024 * 1024) return '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
+    return '${(bytes / 1024 / 1024 / 1024).toStringAsFixed(1)} GB';
+  }
+
+  String _fmtTime(int ts) {
+    final dt = DateTime.fromMillisecondsSinceEpoch(ts);
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${dt.year}-${two(dt.month)}-${two(dt.day)} ${two(dt.hour)}:${two(dt.minute)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final published = file.visibility == 'published';
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(file.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: published ? const Color(0xFFECFDF5) : const Color(0xFFF3F4F6),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                        color: published ? const Color(0xFFA7F3D0) : const Color(0xFFE5E7EB),
+                        width: 0.8),
+                  ),
+                  child: Text(published ? '已开放' : '未开放',
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: published ? const Color(0xFF059669) : const Color(0xFF6B7280))),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text('${file.subject} · ${_fmtSize(file.size)} · ${_fmtTime(file.uploadedAt)}',
+                style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                SizedBox(
+                  height: 28,
+                  child: Switch(
+                    value: published,
+                    onChanged: (_) => onToggle(),
+                    activeThumbColor: Colors.white,
+                    activeColor: const Color(0xFF059669),
+                  ),
+                ),
+                Text(published ? '学生可见' : '学生不可见',
+                    style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
+                const Spacer(),
+                TextButton(onPressed: onEdit, child: const Text('编辑')),
+                TextButton(
+                  onPressed: onDelete,
+                  style: TextButton.styleFrom(foregroundColor: const Color(0xFFDC2626)),
+                  child: const Text('删除'),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

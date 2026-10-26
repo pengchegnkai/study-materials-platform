@@ -25,8 +25,55 @@ class _AdminPageState extends ConsumerState<AdminPage> with SingleTickerProvider
     super.dispose();
   }
 
+  /// 侧栏/页签条目（网页端 AdminPage tabs 同款：图标 + 文字 + 选中靛蓝底胶囊）
+  static const _tabsDef = [
+    (Icons.dashboard_outlined, '数据看板'),
+    (Icons.folder_outlined, '文件管理'),
+    (Icons.people_outlined, '用户管理'),
+    (Icons.subject_outlined, '科目管理'),
+    (Icons.show_chart_outlined, '24 小时曲线'),
+    (Icons.receipt_long_outlined, '实时日志'),
+  ];
+
+  Widget _sideItem(int i, bool active) {
+    final d = _tabsDef[i];
+    return InkWell(
+      onTap: () => _tabController.animateTo(i),
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        height: 44,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: active ? const Color(0xFFEEF2FF) : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            Icon(d.$1, size: 18,
+                color: active ? const Color(0xFF4F46E5) : const Color(0xFF6B7280)),
+            const SizedBox(width: 10),
+            Text(d.$2,
+                style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: active ? FontWeight.w600 : FontWeight.w400,
+                    color: active ? const Color(0xFF4F46E5) : const Color(0xFF374151))),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final tabs = [
+      _DashboardTab(onOpenChart: () => _tabController.animateTo(4), onOpenLogs: () => _tabController.animateTo(5)),
+      _FilesTab(),
+      _UsersTab(),
+      _SubjectsTab(),
+      _ChartTab(),
+      _LogsTab(),
+    ];
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('管理后台'),
@@ -45,30 +92,53 @@ class _AdminPageState extends ConsumerState<AdminPage> with SingleTickerProvider
             },
           ),
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          isScrollable: true,
-          tabs: const [
-            Tab(icon: Icon(Icons.dashboard_outlined), text: '仪表盘'),
-            Tab(icon: Icon(Icons.folder_outlined), text: '文件管理'),
-            Tab(icon: Icon(Icons.people_outlined), text: '用户管理'),
-            Tab(icon: Icon(Icons.subject_outlined), text: '科目管理'),
-            Tab(icon: Icon(Icons.show_chart_outlined), text: '24 小时曲线'),
-            Tab(icon: Icon(Icons.receipt_long_outlined), text: '实时日志'),
-          ],
-        ),
+        bottom: MediaQuery.of(context).size.width >= 960
+            ? null
+            : TabBar(
+                controller: _tabController,
+                isScrollable: true,
+                tabs: [
+                  for (final d in _tabsDef) Tab(icon: Icon(d.$1), text: d.$2),
+                ],
+              ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _DashboardTab(onOpenChart: () => _tabController.animateTo(4), onOpenLogs: () => _tabController.animateTo(5)),
-          _FilesTab(),
-          _UsersTab(),
-          _SubjectsTab(),
-          _ChartTab(),
-          _LogsTab(),
-        ],
-      ),
+      body: MediaQuery.of(context).size.width >= 960
+          ? Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 宽屏左侧栏（网页端 lg 侧栏同款：白卡 + 选中靛蓝胶囊）
+                Container(
+                  width: 220,
+                  margin: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFEFEFF3)),
+                  ),
+                  child: AnimatedBuilder(
+                    animation: _tabController,
+                    builder: (_, __) => Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (var i = 0; i < _tabsDef.length; i++)
+                          _sideItem(i, _tabController.index == i),
+                      ],
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: AnimatedBuilder(
+                    animation: _tabController,
+                    builder: (_, __) => tabs[_tabController.index],
+                  ),
+                ),
+              ],
+            )
+          : TabBarView(
+              controller: _tabController,
+              children: tabs,
+            ),
     );
   }
 }
@@ -108,10 +178,10 @@ class _DashboardTab extends ConsumerWidget {
               crossAxisSpacing: 12,
               childAspectRatio: 1.6,
               children: [
-                _StatCard('在线人数', '${d.onlineUsers}', Icons.people_outline, Colors.blue),
-                _StatCard('总用户', '${d.totalUsers}', Icons.person_outline, Colors.green),
-                _StatCard('总文件', '${d.totalFiles}', Icons.description_outlined, Colors.orange),
-                _StatCard('存储占用', formatSize(d.totalSize), Icons.storage_outlined, Colors.purple),
+                _StatCard('实时在线', '${d.onlineUsers}', Icons.people_outline, const Color(0xFF10B981)),
+                _StatCard('总用户', '${d.totalUsers}', Icons.person_outline, const Color(0xFF6366F1)),
+                _StatCard('总文件', '${d.totalFiles}', Icons.description_outlined, const Color(0xFF3B82F6)),
+                _StatCard('存储占用', formatSize(d.totalSize), Icons.storage_outlined, const Color(0xFFF59E0B)),
               ],
               );
             }),
@@ -167,10 +237,10 @@ class _StatCard extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(color: color.withOpacity(0.15), borderRadius: BorderRadius.circular(8)),
-              child: Icon(icon, size: 18, color: color),
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(12)),
+              child: Icon(icon, size: 20, color: color),
             ),
             const Spacer(),
             Text(label, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
