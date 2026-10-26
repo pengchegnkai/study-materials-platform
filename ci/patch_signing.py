@@ -39,6 +39,9 @@ def main(path: str) -> None:
     if "release {" not in s:
         raise SystemExit("未找到 release { 块，注入失败")
     s = s.replace("release {", "release {\n" + release_line, 1)
+    # 删除模板原有的 debug 签名行：它在 ci 行之后赋值会覆盖固定签名，
+    # 且 runner 上无 ~/.android/debug.keystore 时 AGP 会随机生成新签名。
+    s = s.replace('            signingConfig = signingConfigs.getByName("debug")\n', "")
 
     with open(path, "w", encoding="utf-8") as f:
         f.write(s)
