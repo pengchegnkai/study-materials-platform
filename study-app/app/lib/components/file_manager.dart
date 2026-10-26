@@ -1,5 +1,7 @@
 /// components/file_manager.dart —— 资源管理器风格文件管理组件
 /// 支持：列表/网格视图、多选、排序、右键菜单、重命名、删除、可见性切换
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
