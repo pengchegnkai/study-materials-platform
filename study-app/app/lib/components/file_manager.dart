@@ -513,9 +513,9 @@ class _FileManagerState extends ConsumerState<FileManager> {
       context,
       '文件夹：${folderPath.split('/').last}',
       [
-        const WebMenuAction(Icons.drive_file_move_outline, '移动文件夹', 'move',
+        WebMenuAction(Icons.drive_file_move_outline, '移动文件夹', 'move',
             enabled: widget.onMoveFolder != null),
-        const WebMenuAction(Icons.folder_delete_outlined, '删除文件夹（文件移到上级）', 'delete',
+        WebMenuAction(Icons.folder_delete_outlined, '删除文件夹（文件移到上级）', 'delete',
             danger: true, enabled: widget.onDeleteFolder != null),
       ],
     );
