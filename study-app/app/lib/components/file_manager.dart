@@ -3,7 +3,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:path_provider/path_provider.dart';
 import '../models/models.dart';
+import '../services/platform_service.dart';
 
 typedef FileActionCallback = Future<void> Function(AdminFile);
 typedef RenameCallback = Future<void> Function(AdminFile, String);
@@ -571,6 +573,37 @@ class _FileManagerState extends ConsumerState<FileManager> {
     }
   }
 
+  /// 下载到本地：保存到手机「下载」目录（与预览页下载一致）
+  Future<void> _downloadFile(AdminFile file) async {
+    try {
+      final resp = await PlatformService().fileBytes(file.key);
+      final data = resp.data;
+      if (data == null || data.isEmpty) throw Exception('文件为空');
+      Directory? target;
+      try {
+        final ext = await getExternalStorageDirectory();
+        if (ext != null) {
+          target = Directory('${ext.path}/Download');
+          await target.create(recursive: true);
+        }
+      } catch (_) {}
+      target ??= await getApplicationDocumentsDirectory();
+      final f = File('${target.path}/${file.title}');
+      await f.writeAsBytes(data, flush: true);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已保存：${f.path}')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('下载失败：$e'.replaceFirst('Exception: ', '')), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
   /// 单项移动/复制（网页端操作列同款）
   Future<void> _moveOrCopyOne(AdminFile file, String action) async {
     if (widget.onMoveCopy == null) return;
@@ -809,7 +842,20 @@ class _FileManagerState extends ConsumerState<FileManager> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(file.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14)),
-                  Text('${file.uploaderUsername} · ${_formatSize(file.size)} · ${_formatTime(file.uploadedAt)}', style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                  Row(
+                    children: [
+                      _TypePill(file),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          '${file.uploaderUsername} · ${_formatSize(file.size)} · ${_formatTime(file.uploadedAt)}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -824,9 +870,11 @@ class _FileManagerState extends ConsumerState<FileManager> {
                   case 'props': _showProperties(file); break;
                   case 'move': _moveOrCopyOne(file, 'move'); break;
                   case 'copy': _moveOrCopyOne(file, 'copy'); break;
+                  case 'download': _downloadFile(file); break;
                 }
               },
               itemBuilder: (_) => [
+                const PopupMenuItem(value: 'download', child: Row(children: [Icon(Icons.download_outlined, size: 18), SizedBox(width: 8), Text('下载到本地')])),
                 if (widget.canManage) const PopupMenuItem(value: 'rename', child: Row(children: [Icon(Icons.edit_outlined, size: 18), SizedBox(width: 8), Text('重命名')])),
                 if (widget.canManage && widget.onMoveCopy != null)
                   const PopupMenuItem(value: 'move', child: Row(children: [Icon(Icons.drive_file_move_outline, size: 18), SizedBox(width: 8), Text('移动')])),
@@ -998,6 +1046,40 @@ class _FileIcon extends StatelessWidget {
         borderRadius: BorderRadius.circular(tile * 0.3),
       ),
       child: Icon(icon, size: size * 1.05, color: color),
+    );
+  }
+}
+
+/// 类型胶囊标签：网页端文件卡底部类型标签同款配色
+class _TypePill extends StatelessWidget {
+  final AdminFile file;
+  const _TypePill(this.file);
+
+  @override
+  Widget build(BuildContext context) {
+    final type = (file.contentType ?? '').toLowerCase();
+    final ext = file.key.split('.').last.toLowerCase();
+    String label;
+    Color bg, fg;
+    if (type == 'pdf' || ext == 'pdf') {
+      label = 'PDF'; bg = const Color(0xFFFEF2F2); fg = const Color(0xFFDC2626);
+    } else if (type == 'docx' || type.contains('word') || ['doc', 'docx'].contains(ext)) {
+      label = 'WORD'; bg = const Color(0xFFEFF6FF); fg = const Color(0xFF2563EB);
+    } else if (type == 'pptx' || type.contains('presentation') || ['ppt', 'pptx'].contains(ext)) {
+      label = 'PPT'; bg = const Color(0xFFFFF7ED); fg = const Color(0xFFEA580C);
+    } else if (type == 'image' || type.startsWith('image/') || ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].contains(ext)) {
+      label = '图片'; bg = const Color(0xFFFAF5FF); fg = const Color(0xFF9333EA);
+    } else if (type == 'markdown' || type.contains('markdown') || ['md', 'markdown'].contains(ext)) {
+      label = 'MD'; bg = const Color(0xFFEEF2FF); fg = const Color(0xFF4F46E5);
+    } else if (type.contains('sheet') || ['xlsx', 'xls', 'csv'].contains(ext)) {
+      label = 'EXCEL'; bg = const Color(0xFFECFDF5); fg = const Color(0xFF059669);
+    } else {
+      label = '文件'; bg = const Color(0xFFF3F4F6); fg = const Color(0xFF6B7280);
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
+      child: Text(label, style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: fg, letterSpacing: 0.3)),
     );
   }
 }

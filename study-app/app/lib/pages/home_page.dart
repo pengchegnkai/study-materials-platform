@@ -1,4 +1,4 @@
-/// pages/home_page.dart —— 首页：Hero + 科目卡片网格（对齐网页端视觉）
+/// pages/home_page.dart —— 首页：渐变 Hero 横幅（光斑/统计条）+ 科目网格（对齐网页端桌面版）
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -50,18 +50,31 @@ class HomePage extends ConsumerWidget {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
             children: [
-              const _Hero(),
+              _HeroBanner(
+                subjectCount: list.length,
+                fileCount: list.fold<int>(0, (n, s) => n + s.publishedCount),
+              ),
               if (list.isEmpty)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 48),
                   child: Center(
-                      child: Text('暂无科目', style: TextStyle(color: Color(0xFF6B7280)))),
+                      child: Text('暂无科目',
+                          style: TextStyle(color: Color(0xFF6B7280)))),
                 )
               else
-                ...list.map((s) => Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: _SubjectCard(s),
-                    )),
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  padding: EdgeInsets.zero,
+                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: 300,
+                    mainAxisSpacing: 16,
+                    crossAxisSpacing: 16,
+                    childAspectRatio: 2.9,
+                  ),
+                  itemCount: list.length,
+                  itemBuilder: (_, i) => _SubjectCard(list[i]),
+                ),
             ],
           ),
         ),
@@ -70,43 +83,170 @@ class HomePage extends ConsumerWidget {
   }
 }
 
-/// Hero：与网页端一致的「班级共享 · 随时查阅」标签 + 大标题
-class _Hero extends StatelessWidget {
-  const _Hero();
+/// 渐变 Hero 横幅：与网页端桌面版一致（渐变底 + 光斑 + 白字 + 统计条）
+class _HeroBanner extends StatelessWidget {
+  final int subjectCount;
+  final int fileCount;
+  const _HeroBanner({required this.subjectCount, required this.fileCount});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 8, bottom: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    final wide = MediaQuery.of(context).size.width >= 700;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF4F46E5), // indigo-600
+            Color(0xFF6366F1), // indigo-500
+            Color(0xFF7C3AED), // violet-600
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF4F46E5).withOpacity(0.35),
+            blurRadius: 40,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Stack(
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              color: const Color(0xFFEEF2FF),
-              borderRadius: BorderRadius.circular(20),
+          // 装饰光斑（对应网页 blur 光斑）
+          Positioned(
+            top: -60,
+            right: -40,
+            child: IgnorePointer(
+              child: Container(
+                width: 220,
+                height: 220,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(colors: [
+                    Colors.white.withOpacity(0.10),
+                    Colors.white.withOpacity(0.0),
+                  ]),
+                ),
+              ),
             ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
+          ),
+          Positioned(
+            bottom: -70,
+            left: -30,
+            child: IgnorePointer(
+              child: Container(
+                width: 200,
+                height: 200,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(colors: [
+                    const Color(0xFFC4B5FD).withOpacity(0.20),
+                    const Color(0xFFC4B5FD).withOpacity(0.0),
+                  ]),
+                ),
+              ),
+            ),
+          ),
+          // 内容
+          Padding(
+            padding: EdgeInsets.fromLTRB(wide ? 40 : 24, wide ? 44 : 32, wide ? 40 : 24, wide ? 44 : 32),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.auto_awesome, size: 13, color: Color(0xFF4F46E5)),
-                SizedBox(width: 5),
-                Text('班级共享 · 随时查阅',
+                // 玻璃徽章
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.white.withOpacity(0.25)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.auto_awesome, size: 13, color: Colors.white),
+                      SizedBox(width: 5),
+                      Text('班级共享 · 随时查阅',
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.white)),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text('学习资料平台',
                     style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF4F46E5))),
+                        fontSize: wide ? 34 : 26,
+                        leadingDistribution: TextLeadingDistribution.even,
+                        height: 1.15,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.5,
+                        color: Colors.white)),
+                const SizedBox(height: 10),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 560),
+                  child: Text(
+                    '按科目浏览老师开放的学习资料，支持 Word / PPT / Excel / PDF / Markdown 在线预览',
+                    style: TextStyle(
+                        fontSize: wide ? 15 : 13.5,
+                        height: 1.6,
+                        color: Colors.white.withOpacity(0.85)),
+                  ),
+                ),
+                const SizedBox(height: 22),
+                // 统计条
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    _statChip(Icons.menu_book_outlined, '$subjectCount', ' 个科目'),
+                    _statChip(Icons.task_alt_outlined, '$fileCount', ' 份已开放资料'),
+                    if (wide) _statChip(Icons.cloud_done_outlined, '', '全天候在线访问', plain: true),
+                  ],
+                ),
               ],
             ),
           ),
-          const SizedBox(height: 10),
-          const Text('学习资料',
-              style: TextStyle(
-                  fontSize: 26, fontWeight: FontWeight.w700, letterSpacing: -0.4)),
-          const SizedBox(height: 4),
-          const Text('按科目浏览老师开放的资料，支持 Word / PPT / Excel / PDF 在线预览',
-              style: TextStyle(fontSize: 13, color: Color(0xFF6B7280), height: 1.5)),
+        ],
+      ),
+    );
+  }
+
+  Widget _statChip(IconData icon, String bold, String label, {bool plain = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(0.25)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: Colors.white),
+          const SizedBox(width: 6),
+          Text.rich(
+            TextSpan(
+              children: [
+                if (bold.isNotEmpty)
+                  TextSpan(
+                      text: bold,
+                      style: const TextStyle(
+                          fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
+                TextSpan(
+                    text: label,
+                    style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.white)),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -131,6 +271,7 @@ List<Color> _paletteFor(String name) {
   return _palette[h % _palette.length];
 }
 
+/// 科目卡片：渐变图标块 + 名称 + 胶囊计数 + 右上箭头（网页端同款）
 class _SubjectCard extends StatelessWidget {
   final Subject subject;
   const _SubjectCard(this.subject);
@@ -140,16 +281,17 @@ class _SubjectCard extends StatelessWidget {
     final colors = _paletteFor(subject.name);
     return Card(
       clipBehavior: Clip.antiAlias,
+      elevation: 0,
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: () => context.push('/subject/${subject.slug}'),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(14),
           child: Row(
             children: [
               Container(
-                width: 46,
-                height: 46,
+                width: 44,
+                height: 44,
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
@@ -159,28 +301,29 @@ class _SubjectCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(14),
                   boxShadow: [
                     BoxShadow(
-                      color: colors.first.withOpacity(0.28),
+                      color: colors.first.withOpacity(0.25),
                       blurRadius: 12,
                       offset: const Offset(0, 4),
                     ),
                   ],
                 ),
-                child: const Icon(Icons.folder_open, size: 21, color: Colors.white),
+                child: const Icon(Icons.folder_open, size: 19, color: Colors.white),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(subject.name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                            fontSize: 15.5, fontWeight: FontWeight.w600)),
+                            fontSize: 15, fontWeight: FontWeight.w600)),
                     const SizedBox(height: 6),
                     Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2.5),
                       decoration: BoxDecoration(
                         color: Color.alphaBlend(
                             colors.first.withOpacity(0.10), Colors.white),
@@ -198,7 +341,8 @@ class _SubjectCard extends StatelessWidget {
                 ),
               ),
               Icon(Icons.north_east,
-                  size: 18, color: Theme.of(context).colorScheme.outlineVariant),
+                  size: 17,
+                  color: Theme.of(context).colorScheme.outlineVariant),
             ],
           ),
         ),
