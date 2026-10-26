@@ -128,7 +128,7 @@ jobs:
         if: always()
         working-directory: .
         run: |
-          cp build_tmp/android/app/build.gradle.kts study-app/generated-app-build.gradle.kts 2>/dev/null || echo '// 未生成' > study-app/generated-app-build.gradle.kts
+          cp study-app/build_tmp/android/app/build.gradle.kts study-app/generated-app-build.gradle.kts 2>/dev/null || echo '// 未生成' > study-app/generated-app-build.gradle.kts
 
       - name: Upload build logs（无论成败）
         if: always()
