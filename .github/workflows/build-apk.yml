@@ -169,7 +169,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cd "$GITHUB_WORKSPACE/study-app"
-          tar czf build-debug-logs.tar.gz build.log analyze.log 2>/dev/null || true
+          cp build_tmp/android/app/build.gradle.kts generated-app-build.gradle.kts 2>/dev/null || true
+          tar czf build-debug-logs.tar.gz build.log analyze.log generated-app-build.gradle.kts 2>/dev/null || true
           gh release delete debug --yes 2>/dev/null || true
           gh release create debug build-debug-logs.tar.gz \
             --title "构建失败日志（自动上传）" --notes "flutter build 失败时的完整日志" || true
