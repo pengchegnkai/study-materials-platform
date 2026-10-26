@@ -40,7 +40,7 @@ class _SubjectPageState extends ConsumerState<SubjectPage> {
     } catch (_) {}
   }
 
-  String _previewType(AdminFile f) {
+  String _previewType(FileItem f) {
     final type = (f.contentType ?? '').toLowerCase();
     final ext = f.key.split('.').last.toLowerCase();
     if (type == 'markdown' || type.contains('markdown') || ['md', 'markdown'].contains(ext)) return 'markdown';
@@ -59,7 +59,7 @@ class _SubjectPageState extends ConsumerState<SubjectPage> {
     );
   }
 
-  Future<void> _download(AdminFile f) async {
+  Future<void> _download(FileItem f) async {
     try {
       final resp = await _svc.fileBytes(f.key);
       final data = resp.data;
@@ -115,13 +115,9 @@ class _SubjectPageState extends ConsumerState<SubjectPage> {
             ),
           ]),
         ),
-        data: (files) {
-          // 按上传者分组（网页端同款：老师 · N 个文件）
-          final map = <String, List<AdminFile>>{};
-          for (final f in files) {
-            (map[f.uploaderUsername] ??= []).add(f);
-          }
-          final groups = map.entries.toList();
+        data: (grouped) {
+          // subjectFilesProvider 已按上传者分组：Map<老师, List<FileItem>>
+          final groups = grouped.entries.toList();
 
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
@@ -186,12 +182,12 @@ class _SubjectPageState extends ConsumerState<SubjectPage> {
 
 /// 类型胶囊（网页端文件卡底部类型标签同款配色）
 class _TypePill extends StatelessWidget {
-  final AdminFile file;
+  final FileItem file;
   const _TypePill(this.file);
 
   @override
   Widget build(BuildContext context) {
-    final type = (file.contentType ?? '').toLowerCase();
+    final type = (file.type).toLowerCase();
     final ext = file.key.split('.').last.toLowerCase();
     String label;
     Color bg, fg;
@@ -221,7 +217,7 @@ class _TypePill extends StatelessWidget {
 
 /// 文件卡：网页端 FileCard 同款（类型图标块 + 标题/meta + 徽标 + 底部类型标签与下载）
 class _FileCard extends StatelessWidget {
-  final AdminFile file;
+  final FileItem file;
   final VoidCallback onTap;
   final VoidCallback onDownload;
   const _FileCard({required this.file, required this.onTap, required this.onDownload});
@@ -253,7 +249,7 @@ class _FileCard extends StatelessWidget {
                             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
                         const SizedBox(height: 4),
                         Text(
-                            '${file.uploaderUsername} · ${_fmtSize(file.size)} · ${_fmtTime(file.uploadedAt)}',
+                            '${file.uploader} · ${_fmtSize(file.size)} · ${_fmtTime(file.uploadedAt)}',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
@@ -307,12 +303,12 @@ class _FileCard extends StatelessWidget {
 
 /// 类型图标块（网页端 TypeIcon 同款：不同类型专属彩色底）
 class _TypeIcon extends StatelessWidget {
-  final AdminFile file;
+  final FileItem file;
   const _TypeIcon({required this.file});
 
   @override
   Widget build(BuildContext context) {
-    final type = (file.contentType ?? '').toLowerCase();
+    final type = (file.type).toLowerCase();
     final ext = file.key.split('.').last.toLowerCase();
     IconData icon;
     Color bg, fg;

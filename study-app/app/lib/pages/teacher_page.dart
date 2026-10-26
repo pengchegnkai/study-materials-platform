@@ -258,8 +258,8 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
 
   @override
   Widget build(BuildContext context) {
-    // 筛选
-    final visibleFiles = _myFiles.where((f) {
+    // 筛选（转成 AdminFile 与网页端文件卡字段一致）
+    final visibleFiles = _myFiles.map(_toAdminFile).where((f) {
       if (_filterSubject.isNotEmpty && f.subject != _filterSubject) return false;
       if (_filterState == 'published' && f.visibility != 'published') return false;
       if (_filterState == 'private' && f.visibility != 'private') return false;
