@@ -481,30 +481,24 @@ class _FileManagerState extends ConsumerState<FileManager> {
             const SizedBox(width: 6),
             // 文件夹操作
             if (hasFolderActions)
-              PopupMenuButton<String>(
-                onSelected: (v) {
+              InkWell(
+                onTap: () async {
+                  final actions = <WebMenuAction>[
+                    if (widget.onCreateFolder != null)
+                      const WebMenuAction(Icons.create_new_folder_outlined, '新建文件夹', 'newFolder'),
+                    if (widget.onUpload != null)
+                      const WebMenuAction(Icons.upload_file_outlined, '上传到此处', 'upload'),
+                  ];
+                  final v = await showWebMenuSheet(context, '文件夹操作', actions);
+                  if (v == null || !mounted) return;
                   if (v == 'newFolder') _showCreateFolderDialog();
                   if (v == 'upload') widget.onUpload?.call(_currentPath);
                 },
-                itemBuilder: (_) => [
-                  if (widget.onCreateFolder != null)
-                    const PopupMenuItem(
-                        value: 'newFolder',
-                        child: Row(children: [
-                          Icon(Icons.create_new_folder_outlined, size: 18),
-                          SizedBox(width: 8),
-                          Text('新建文件夹')
-                        ])),
-                  if (widget.onUpload != null)
-                    const PopupMenuItem(
-                        value: 'upload',
-                        child: Row(children: [
-                          Icon(Icons.upload_file_outlined, size: 18),
-                          SizedBox(width: 8),
-                          Text('上传到此处')
-                        ])),
-                ],
-                child: Icon(Icons.add_circle_outline, size: 22, color: cs.colorScheme.primary),
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: Icon(Icons.add_circle_outline, size: 22, color: cs.colorScheme.primary),
+                ),
               ),
           ],
         );
@@ -515,27 +509,15 @@ class _FileManagerState extends ConsumerState<FileManager> {
   /// 文件夹长按操作菜单：移动 / 删除
   Future<void> _showFolderActions(String folderPath) async {
     if (widget.onDeleteFolder == null && widget.onMoveFolder == null) return;
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.drive_file_move_outline),
-              title: const Text('移动文件夹'),
-              enabled: widget.onMoveFolder != null,
-              onTap: () => Navigator.pop(ctx, 'move'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.folder_delete_outlined),
-              title: const Text('删除文件夹（文件移到上级）'),
-              enabled: widget.onDeleteFolder != null,
-              onTap: () => Navigator.pop(ctx, 'delete'),
-            ),
-          ],
-        ),
-      ),
+    final action = await showWebMenuSheet(
+      context,
+      '文件夹：${folderPath.split('/').last}',
+      [
+        const WebMenuAction(Icons.drive_file_move_outline, '移动文件夹', 'move',
+            enabled: widget.onMoveFolder != null),
+        const WebMenuAction(Icons.folder_delete_outlined, '删除文件夹（文件移到上级）', 'delete',
+            danger: true, enabled: widget.onDeleteFolder != null),
+      ],
     );
     if (action == null || !mounted) return;
     if (action == 'delete') {
@@ -863,8 +845,29 @@ class _FileManagerState extends ConsumerState<FileManager> {
             ),
             _VisibilityBadge(file.visibility),
             const SizedBox(width: 4),
-            PopupMenuButton<String>(
-              onSelected: (v) {
+            InkWell(
+              onTap: () async {
+                final actions = <WebMenuAction>[
+                  const WebMenuAction(Icons.download_outlined, '下载到本地', 'download'),
+                  if (widget.canManage)
+                    const WebMenuAction(Icons.edit_outlined, '重命名', 'rename'),
+                  if (widget.canManage && widget.onMoveCopy != null)
+                    const WebMenuAction(Icons.drive_file_move_outline, '移动', 'move'),
+                  if (widget.canManage && widget.onMoveCopy != null)
+                    const WebMenuAction(Icons.copy_all_outlined, '复制', 'copy'),
+                  if (widget.canManage)
+                    WebMenuAction(
+                        file.visibility == 'published'
+                            ? Icons.visibility_off
+                            : Icons.visibility,
+                        file.visibility == 'published' ? '取消开放' : '开放',
+                        'toggle'),
+                  const WebMenuAction(Icons.info_outlined, '属性', 'props'),
+                  if (widget.canManage)
+                    const WebMenuAction(Icons.delete_outline, '删除', 'delete', danger: true),
+                ];
+                final v = await showWebMenuSheet(context, file.title, actions);
+                if (v == null || !mounted) return;
                 switch (v) {
                   case 'rename': _renameFile(file); break;
                   case 'toggle': _toggleVisibility(file); break;
@@ -875,18 +878,11 @@ class _FileManagerState extends ConsumerState<FileManager> {
                   case 'download': _downloadFile(file); break;
                 }
               },
-              itemBuilder: (_) => [
-                const PopupMenuItem(value: 'download', child: Row(children: [Icon(Icons.download_outlined, size: 18), SizedBox(width: 8), Text('下载到本地')])),
-                if (widget.canManage) const PopupMenuItem(value: 'rename', child: Row(children: [Icon(Icons.edit_outlined, size: 18), SizedBox(width: 8), Text('重命名')])),
-                if (widget.canManage && widget.onMoveCopy != null)
-                  const PopupMenuItem(value: 'move', child: Row(children: [Icon(Icons.drive_file_move_outline, size: 18), SizedBox(width: 8), Text('移动')])),
-                if (widget.canManage && widget.onMoveCopy != null)
-                  const PopupMenuItem(value: 'copy', child: Row(children: [Icon(Icons.copy_all_outlined, size: 18), SizedBox(width: 8), Text('复制')])),
-                if (widget.canManage) PopupMenuItem(value: 'toggle', child: Row(children: [Icon(file.visibility == 'published' ? Icons.visibility_off : Icons.visibility, size: 18), SizedBox(width: 8), Text(file.visibility == 'published' ? '取消开放' : '开放')])),
-                const PopupMenuItem(value: 'props', child: Row(children: [Icon(Icons.info_outlined, size: 18), SizedBox(width: 8), Text('属性')])),
-                if (widget.canManage) const PopupMenuItem(value: 'delete', child: Row(children: [Icon(Icons.delete_outline, size: 18, color: Colors.red), SizedBox(width: 8), Text('删除', style: TextStyle(color: Colors.red))])),
-              ],
-              child: Icon(Icons.more_vert, size: 18, color: Theme.of(context).colorScheme.onSurfaceVariant),
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.all(6),
+                child: Icon(Icons.more_vert, size: 18, color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ),
             ),
           ],
         ),
@@ -1125,4 +1121,92 @@ String _formatTime(int ts) {
 String _formatDateTime(int ts) {
   final dt = DateTime.fromMillisecondsSinceEpoch(ts);
   return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}:${dt.second.toString().padLeft(2, '0')}';
+}
+
+/// 网页端风格二级菜单：白卡、顶部圆角 16、图标行 48px、危险项红字（对齐网页端下拉卡片）
+class WebMenuAction {
+  final IconData icon;
+  final String label;
+  final String value;
+  final bool danger;
+  final bool enabled;
+  const WebMenuAction(this.icon, this.label, this.value, {this.danger = false, this.enabled = true});
+}
+
+Future<String?> showWebMenuSheet(
+  BuildContext context,
+  String title,
+  List<WebMenuAction> actions,
+) {
+  return showModalBottomSheet<String>(
+    context: context,
+    backgroundColor: Colors.white,
+    elevation: 12,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    ),
+    builder: (ctx) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(top: 8, bottom: 4),
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE5E7EB),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 2, 8, 6),
+              child: Text(title,
+                  style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF9CA3AF))),
+            ),
+            for (final a in actions)
+              Opacity(
+                opacity: a.enabled ? 1.0 : 0.45,
+                child: InkWell(
+                  onTap: a.enabled ? () => Navigator.pop(ctx, a.value) : null,
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    height: 48,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    child: Row(
+                      children: [
+                        Icon(a.icon,
+                            size: 18,
+                            color: a.danger
+                                ? const Color(0xFFDC2626)
+                                : const Color(0xFF4F46E5)),
+                        const SizedBox(width: 12),
+                        Text(a.label,
+                            style: TextStyle(
+                                fontSize: 14.5,
+                                fontWeight: FontWeight.w500,
+                                color: a.danger
+                                    ? const Color(0xFFDC2626)
+                                    : const Color(0xFF111827))),
+                        const Spacer(),
+                        const Icon(Icons.chevron_right,
+                            size: 16, color: Color(0xFFC4C8D0)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            const SizedBox(height: 6),
+          ],
+        ),
+      ),
+    ),
+  );
 }
