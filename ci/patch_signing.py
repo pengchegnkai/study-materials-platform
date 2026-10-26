@@ -37,7 +37,7 @@ def main(path: str) -> None:
     for name in ("release", "debug"):
         s2 = re.sub(
             rf"(\b{name}\s*\{{)",
-            r"\1\n            signingConfig = signingConfigs.getByName(\"ci\")",
+            '\1\n            signingConfig = signingConfigs.getByName("ci")',
             s2,
             count=1,
         )
