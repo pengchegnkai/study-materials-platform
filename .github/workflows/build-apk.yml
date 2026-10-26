@@ -136,9 +136,9 @@ jobs:
         with:
           name: build-logs
           path: |
-            study-app/analyze.log
-            study-app/build.log
-            study-app/generated-app-build.gradle.kts
+            analyze.log
+            build.log
+            generated-app-build.gradle.kts
           if-no-files-found: ignore
 
       - name: 失败时输出关键错误到 Step Summary 与 Annotations
