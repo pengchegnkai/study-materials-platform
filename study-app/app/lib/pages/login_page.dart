@@ -2,6 +2,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'dart:convert';
+
+import 'package:shared_preferences/shared_preferences.dart';
 import '../core/api_client.dart';
 import '../core/config.dart';
 import '../providers/auth_provider.dart';
@@ -21,6 +24,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   final _p = TextEditingController();
   bool _loading = false;
   String? _error;
+  bool _remember = false; // 记住密码
 
   Future<void> _submit() async {
     setState(() {
@@ -48,6 +52,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       setState(() => _error = err);
       return;
     }
+    await _saveRemember();
     final user = ref.read(authProvider).value?.user;
     // 管理员主界面为后台看板；老师进工作台；学生进浏览页
     // 三种角色都可从 AppBar 切换到浏览界面（首页）
@@ -63,9 +68,34 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   Future<void> _prefill() async {
     if (_prefilled) return;
     _prefilled = true;
+    // 记住密码：优先用已保存的凭据填充
+    final prefs = await SharedPreferences.getInstance();
+    final savedU = prefs.getString('remember_user');
+    final savedP = prefs.getString('remember_pass');
+    if (mounted && savedU != null && savedU.isNotEmpty && _u.text.isEmpty) {
+      _u.text = savedU;
+      if (savedP != null && savedP.isNotEmpty) {
+        _p.text = utf8.decode(base64Decode(savedP));
+        _remember = true;
+      }
+      setState(() {});
+      return;
+    }
     final cached = await ApiClient().cachedSession();
     if (mounted && _u.text.isEmpty && (cached.username ?? '').isNotEmpty) {
       _u.text = cached.username!;
+    }
+  }
+
+  /// 登录成功后按勾选保存/清除凭据（密码 base64 混淆存储）
+  Future<void> _saveRemember() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (_remember) {
+      await prefs.setString('remember_user', _u.text.trim());
+      await prefs.setString('remember_pass', base64Encode(utf8.encode(_p.text)));
+    } else {
+      await prefs.remove('remember_user');
+      await prefs.remove('remember_pass');
     }
   }
 
@@ -152,6 +182,23 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                       child: Text(_error!,
                           style: const TextStyle(color: Colors.red, fontSize: 12)),
                     ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      SizedBox(
+                        height: 24,
+                        width: 24,
+                        child: Checkbox(
+                          value: _remember,
+                          onChanged: (v) => setState(() => _remember = v ?? false),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      const Text('记住密码',
+                          style: TextStyle(fontSize: 13, color: Color(0xFF6B7280))),
+                    ],
+                  ),
                   const SizedBox(height: 20),
                   FilledButton(
                     onPressed: _loading ? null : _submit,
