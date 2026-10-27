@@ -21,6 +21,9 @@ class SubjectPage extends ConsumerStatefulWidget {
 class _SubjectPageState extends ConsumerState<SubjectPage> {
   final _svc = PlatformService();
   String _subjectName = '';
+  String _subjectId = '';
+  List<String> _folders = [];
+  String _currentDir = ''; // 当前目录（文件夹胶囊导航）
 
   @override
   void initState() {
@@ -34,11 +37,34 @@ class _SubjectPageState extends ConsumerState<SubjectPage> {
       for (final s in subs) {
         if (s.slug == widget.slug) {
           if (mounted) setState(() => _subjectName = s.name);
+          // 加载该科目的文件夹目录（学生仅返回已开放文件所在目录）
+          final folders = await _svc
+              .folders(subjectId: s.id)
+              .catchError((_) => <String>[]);
+          if (mounted) setState(() => _folders = folders);
           return;
         }
       }
     } catch (_) {}
   }
+
+  /// 当前目录下的直接子文件夹
+  List<String> _subFolders() {
+    final out = <String>{};
+    for (final p in _folders) {
+      if (_currentDir.isEmpty) {
+        if (p.isNotEmpty) out.add(p.contains('/') ? p.split('/').first : p);
+      } else if (p.startsWith('$_currentDir/')) {
+        final rest = p.substring(_currentDir.length + 1);
+        if (rest.isNotEmpty) out.add(rest.contains('/') ? rest.split('/').first : rest);
+      }
+    }
+    return out.toList()..sort();
+  }
+
+  /// 面包屑段（科目 › 子目录…）
+  List<String> _crumbSegs() =>
+      _currentDir.split('/').where((x) => x.isNotEmpty).toList();
 
   String _previewType(FileItem f) {
     final type = f.type.toLowerCase();
@@ -116,28 +142,98 @@ class _SubjectPageState extends ConsumerState<SubjectPage> {
           ]),
         ),
         data: (grouped) {
+          // 只显示当前目录内的文件（文件夹胶囊导航）
+          final filtered = {
+            for (final e in grouped.entries)
+              e.key: e.value.where((f) => f.dir == _currentDir).toList(),
+          }..removeWhere((_, list) => list.isEmpty);
           // subjectFilesProvider 已按上传者分组：Map<老师, List<FileItem>>
-          final groups = grouped.entries.toList();
+          final groups = filtered.entries.toList();
 
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
             children: [
-              // 面包屑：首页 › 科目名
+              // 面包屑：首页 › 科目名 › 子目录…
               Row(
                 children: [
-                  InkWell(
-                    onTap: () => context.go('/'),
-                    child: const Text('首页',
-                        style: TextStyle(fontSize: 13, color: Color(0xFF6B7280))),
+                  Flexible(
+                    child: Row(
+                      children: [
+                        InkWell(
+                          onTap: () => context.go('/'),
+                          child: const Text('首页',
+                              style: TextStyle(fontSize: 13, color: Color(0xFF6B7280))),
+                        ),
+                        const Icon(Icons.chevron_right, size: 14, color: Color(0xFF9CA3AF)),
+                        InkWell(
+                          onTap: () => setState(() => _currentDir = ''),
+                          child: Text(_subjectName.isEmpty ? '…' : _subjectName,
+                              style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: _currentDir.isEmpty ? FontWeight.w600 : FontWeight.w400,
+                                  color: _currentDir.isEmpty ? const Color(0xFF111827) : const Color(0xFF6B7280))),
+                        ),
+                        for (var i = 0; i < _crumbSegs().length; i++) ...[
+                          const Icon(Icons.chevron_right, size: 14, color: Color(0xFF9CA3AF)),
+                          Builder(builder: (ctx) {
+                            final segs = _crumbSegs();
+                            final path = segs.take(i + 1).join('/');
+                            final last = i == segs.length - 1;
+                            return InkWell(
+                              onTap: () => setState(() => _currentDir = path),
+                              child: Text(segs[i],
+                                  style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: last ? FontWeight.w600 : FontWeight.w400,
+                                      color: last ? const Color(0xFF111827) : const Color(0xFF6B7280))),
+                            );
+                          }),
+                        ],
+                      ],
+                    ),
                   ),
-                  const Icon(Icons.chevron_right, size: 14, color: Color(0xFF9CA3AF)),
-                  Text(_subjectName.isEmpty ? '…' : _subjectName,
-                      style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF111827))),
                 ],
               ),
+              // 文件夹胶囊行（学生可进入子目录）
+              if (_subFolders().isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 10, bottom: 4),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final name in _subFolders())
+                        InkWell(
+                          onTap: () => setState(() =>
+                              _currentDir = _currentDir.isEmpty ? name : '$_currentDir/$name'),
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            height: 36,
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              border: Border.all(color: const Color(0xFFE5E7EB)),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.folder_outlined,
+                                    size: 16, color: Color(0xFF4F46E5)),
+                                const SizedBox(width: 6),
+                                Text(name,
+                                    style: const TextStyle(
+                                        fontSize: 13, fontWeight: FontWeight.w500)),
+                                const SizedBox(width: 6),
+                                const Icon(Icons.chevron_right,
+                                    size: 14, color: Color(0xFFC4C8D0)),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
               const SizedBox(height: 16),
               if (groups.isEmpty)
                 const Padding(

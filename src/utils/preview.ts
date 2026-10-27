@@ -67,11 +67,16 @@ export async function renderPreview(
         const baseName = segs[segs.length - 1] || '';
         if (!baseName) return whole;
 
+        // 上传时间戳前缀：服务器存储名为 `<毫秒时间戳>-<原文件名>`
+        const sameFile = (kn: string, name: string) => kn === name || (name.length > 0 && kn.endsWith(`-${name}`));
+
         let hit: ManifestFileMeta | undefined;
         if (mdDir) hit = manifest.find((f) => f.key === `${mdDir}/${relPath}`);
         hit ??= manifest.find((f) => f.key.endsWith(`/${relPath}`));
-        hit ??= manifest.find((f) => nameOf(f.key) === baseName && dirOf(f.key) === mdDir);
-        hit ??= manifest.find((f) => nameOf(f.key) === baseName);
+        // 优先同科目目录树内匹配（避免跨科目重名错配）
+        if (mdDir) hit ??= manifest.find((f) => f.key.startsWith(`${mdDir}/`) && sameFile(nameOf(f.key), baseName));
+        hit ??= manifest.find((f) => sameFile(nameOf(f.key), baseName) && dirOf(f.key) === mdDir);
+        hit ??= manifest.find((f) => sameFile(nameOf(f.key), baseName));
         return hit ? `${pre}/api/file?key=${encodeURIComponent(hit.key)}${post ?? ''})` : whole;
       });
     }

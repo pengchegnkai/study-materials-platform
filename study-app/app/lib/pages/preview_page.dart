@@ -90,6 +90,11 @@ class _PreviewPageState extends State<PreviewPage> {
         ? widget.fileKey.substring(0, widget.fileKey.lastIndexOf('/'))
         : '';
 
+    // 上传时间戳前缀：服务器存储名为 `<毫秒时间戳>-<原文件名>`，
+    // 因此 md 引用 `photo/1-1.jpg` 对应实际文件 `photo/1792935624810-1-1.jpg`
+    bool sameFile(String kn, String name) =>
+        kn == name || (name.isNotEmpty && kn.endsWith('-$name'));
+
     if (curDir.isNotEmpty) {
       for (final k in keys) {
         if (k == '$curDir/$relPath') return k;
@@ -98,11 +103,17 @@ class _PreviewPageState extends State<PreviewPage> {
     for (final k in keys) {
       if (k.endsWith('/$relPath')) return k;
     }
-    for (final k in keys) {
-      if (nameOf(k) == baseName && dirOf(k) == curDir) return k;
+    // 优先同科目目录树内匹配（避免跨科目重名错配）
+    if (curDir.isNotEmpty) {
+      for (final k in keys) {
+        if (k.startsWith('$curDir/') && sameFile(nameOf(k), baseName)) return k;
+      }
     }
     for (final k in keys) {
-      if (nameOf(k) == baseName) return k;
+      if (sameFile(nameOf(k), baseName) && dirOf(k) == curDir) return k;
+    }
+    for (final k in keys) {
+      if (sameFile(nameOf(k), baseName)) return k;
     }
     return null;
   }

@@ -1310,9 +1310,12 @@ app.get('/api/folders', async (c) => {
     set.add(r.path);
   }
   // 从文件 key 提取隐含目录（按文件科目归属过滤；老师仅限自己科目）
-  const rows = db.prepare('SELECT key, subject_id, uploader_id FROM files').all();
+  const isStudent = !user.roles.includes('admin') && !user.roles.includes('teacher');
+  const rows = db.prepare('SELECT key, subject_id, uploader_id, visibility FROM files').all();
   for (const r of rows) {
     if (subjectId && r.subject_id !== subjectId) continue;
+    // 学生只看到已开放文件的目录结构，避免未开放文件路径泄露
+    if (isStudent && r.visibility !== 'published') continue;
     const dir = dirFromKey(r.key);
     if (!dir || !inMySubjects(dir)) continue;
     set.add(dir);
