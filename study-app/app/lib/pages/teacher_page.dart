@@ -25,6 +25,7 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
   String _uploadSubject = ''; // 上传目标科目 id（网页端同款：上传前先选科目）
   String _filterSubject = ''; // 文件列表筛选：科目
   String _filterState = 'all'; // 文件列表筛选：开放状态
+  String _currentDir = ''; // 当前目录（文件夹导航，与网页端一致）
   bool _uploading = false;
   bool _loadingFiles = true;
   ({int current, int total, int pct, String name})? _progress;
@@ -259,7 +260,10 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
   @override
   Widget build(BuildContext context) {
     // 筛选（转成 AdminFile 与网页端文件卡字段一致）
+    // 当前目录下的子文件夹（网页端文件夹胶囊行同款）
+    final subFolders = _subFolders();
     final visibleFiles = _myFiles.map(_toAdminFile).where((f) {
+      if (f.dir != _currentDir) return false;
       if (_filterSubject.isNotEmpty && f.subject != _filterSubject) return false;
       if (_filterState == 'published' && f.visibility != 'published') return false;
       if (_filterState == 'private' && f.visibility != 'private') return false;
@@ -353,7 +357,7 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
                                   FilledButton.icon(
-                                    onPressed: _uploading ? null : _pickAndUpload,
+                                    onPressed: _uploading ? null : () => _pickAndUpload(_currentDir),
                                     icon: _uploading
                                         ? const SizedBox(
                                             width: 15, height: 15,
@@ -427,6 +431,84 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
                   ],
                 ),
                 const SizedBox(height: 12),
+                // 面包屑 + 新建文件夹（网页端同款）
+                Row(
+                  children: [
+                    Flexible(
+                      child: Row(
+                        children: [
+                          InkWell(
+                            onTap: () => setState(() => _currentDir = ''),
+                            child: Text('全部文件',
+                                style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: _currentDir.isEmpty ? FontWeight.w600 : FontWeight.w400,
+                                    color: _currentDir.isEmpty ? const Color(0xFF111827) : const Color(0xFF6B7280))),
+                          ),
+                          for (var i = 0; i < _currentDir.split('/').where((x) => x.isNotEmpty).toList().length; i++) ...[
+                            const Icon(Icons.chevron_right, size: 14, color: Color(0xFF9CA3AF)),
+                            Builder(builder: (ctx) {
+                              final segs = _currentDir.split('/').where((x) => x.isNotEmpty).toList();
+                              final path = segs.take(i + 1).join('/');
+                              final last = i == segs.length - 1;
+                              return InkWell(
+                                onTap: () => setState(() => _currentDir = path),
+                                child: Text(segs[i],
+                                    style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: last ? FontWeight.w600 : FontWeight.w400,
+                                        color: last ? const Color(0xFF111827) : const Color(0xFF6B7280))),
+                              );
+                            }),
+                          ],
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.create_new_folder_outlined, size: 20),
+                      tooltip: '新建文件夹',
+                      onPressed: _createFolderDialog,
+                    ),
+                  ],
+                ),
+                if (subFolders.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8, bottom: 4),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final name in subFolders)
+                          GestureDetector(
+                            onLongPress: () => _folderActions(_currentDir.isEmpty ? name : '$_currentDir/$name'),
+                            child: InkWell(
+                              onTap: () => setState(() => _currentDir = _currentDir.isEmpty ? name : '$_currentDir/$name'),
+                              borderRadius: BorderRadius.circular(8),
+                              child: Container(
+                                height: 36,
+                                padding: const EdgeInsets.symmetric(horizontal: 12),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.folder_outlined, size: 16, color: Color(0xFF4F46E5)),
+                                    const SizedBox(width: 6),
+                                    Text(name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                                    const SizedBox(width: 6),
+                                    const Icon(Icons.chevron_right, size: 14, color: Color(0xFFC4C8D0)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 12),
                 if (visibleFiles.isEmpty)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 48),
@@ -497,6 +579,80 @@ class _TeacherPageState extends ConsumerState<TeacherPage> {
     final t = ctrl.text.trim();
     if (t.isEmpty || t == f.title) return;
     await _rename(f, t);
+  }
+
+  /// 当前目录下的直接子文件夹
+  List<String> _subFolders() {
+    final out = <String>{};
+    for (final p in _folders) {
+      if (_currentDir.isEmpty) {
+        if (p.isNotEmpty) out.add(p.contains('/') ? p.split('/').first : p);
+      } else if (p.startsWith('$_currentDir/')) {
+        final rest = p.substring(_currentDir.length + 1);
+        if (rest.isNotEmpty) out.add(rest.contains('/') ? rest.split('/').first : rest);
+      }
+    }
+    return out.toList()..sort();
+  }
+
+  /// 新建文件夹（建在当前目录下）
+  Future<void> _createFolderDialog() async {
+    final ctrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('新建文件夹'),
+        content: TextField(controller: ctrl, autofocus: true, decoration: const InputDecoration(hintText: '文件夹名称')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('创建')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final name = ctrl.text.trim();
+    if (name.isEmpty) return;
+    final path = _currentDir.isEmpty ? name : '$_currentDir/$name';
+    try {
+      await _svc.createFolder(path: path);
+      _loadFiles();
+    } catch (e) {
+      _toast('创建失败：$e'.replaceFirst('Exception: ', ''));
+    }
+  }
+
+  /// 文件夹长按菜单（网页端同款弹层）：删除（文件移到上级）
+  Future<void> _folderActions(String path) async {
+    final v = await showWebMenuSheet(
+      context,
+      '文件夹：${path.split('/').last}',
+      const [
+        WebMenuAction(Icons.folder_delete_outlined, '删除文件夹（文件移到上级）', 'delete', danger: true),
+      ],
+    );
+    if (v != 'delete' || !mounted) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除文件夹'),
+        content: Text('确定删除「${path.split('/').last}」？其中所有文件将移到上级目录，不会丢失。'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await _svc.deleteFolder(path);
+      _loadFiles();
+    } catch (e) {
+      _toast('删除失败：$e'.replaceFirst('Exception: ', ''));
+    }
   }
 }
 
