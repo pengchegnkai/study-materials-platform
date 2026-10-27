@@ -139,9 +139,14 @@ class _UpdatePageState extends ConsumerState<UpdatePage> {
               headers: {'Range': 'bytes=$start-${start + chunkSize - 1}'},
               responseType: ResponseType.bytes,
               receiveTimeout: const Duration(minutes: 5),
-              validateStatus: (s) => s != null && (s == 200 || s == 206),
+              // 416 = 起点已到文件尾（上次下载已完整），视为正常结束
+              validateStatus: (s) => s != null && (s == 200 || s == 206 || s == 416),
             ),
           );
+          if (resp.statusCode == 416) {
+            eof = true; // 已到文件尾，直接进入完整性校验
+            continue;
+          }
           final data = resp.data ?? const <int>[];
           if (data.isEmpty) {
             throw Exception('服务器返回空分片（HTTP ${resp.statusCode}）');
