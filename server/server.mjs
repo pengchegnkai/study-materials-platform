@@ -91,12 +91,45 @@ db.exec(`CREATE TABLE IF NOT EXISTS activity_logs (
 )`);
 db.exec('CREATE INDEX IF NOT EXISTS idx_activity_created ON activity_logs(created_at)');
 
-async function logActivity(user, action, detail = '') {
+async function logActivity(user, action, detail = '', ip = '') {
   try {
-    db.prepare('INSERT INTO activity_logs (id, user_id, username, action, detail, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(rid('log'), user?.sub ?? null, user?.username ?? 'system', action, String(detail).slice(0, 300), Date.now());
+    db.prepare('INSERT INTO activity_logs (id, user_id, username, action, detail, ip, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(rid('log'), user?.sub ?? null, user?.username ?? 'system', action, String(detail).slice(0, 300), String(ip).slice(0, 64), Date.now());
   } catch {}
+  if (ip) ensureGeo(ip).catch(() => {});
 }
+
+// 客户端真实 IP（优先 Cloudflare / 代理头）
+const clientIp = (c) => (c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || c.req.header('x-real-ip') || '').split(',')[0].trim();
+
+// ---------- IP 归属地（ip-api.com 中文接口，结果缓存；私网/本地直接标记） ----------
+const ipGeoCache = new Map();
+const _LOCAL_IP = (ip) => !ip || ip === '::1' || ip.startsWith('127.') || ip.startsWith('192.168.') || ip.startsWith('10.') || ip.startsWith('172.16.');
+function geoOf(ip) {
+  if (!ip) return '未知';
+  if (_LOCAL_IP(ip)) return '本地网络';
+  return ipGeoCache.get(ip) || '待查询';
+}
+async function ensureGeo(ip) {
+  if (!ip || _LOCAL_IP(ip)) return '本地网络';
+  if (ipGeoCache.has(ip)) return ipGeoCache.get(ip);
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 5000);
+    const r = await fetch(`http://ip-api.com/json/${ip}?lang=zh-CN&fields=status,country,regionName,city,query`, { signal: ctrl.signal });
+    clearTimeout(t);
+    const d = await r.json();
+    const loc = d.status === 'success' ? [d.country, d.regionName, d.city].filter(Boolean).join(' ') : '未知';
+    ipGeoCache.set(ip, loc || '未知');
+    return loc || '未知';
+  } catch {
+    ipGeoCache.set(ip, '未知');
+    return '未知';
+  }
+}
+
+// 「打开文件」去重：同一用户+同一文件 10 分钟内只记一次
+const _viewDedup = new Map();
 
 // ---------- 密码哈希（PBKDF2-SHA256 + 恒定时间比较，与 Cloudflare 版一致） ----------
 const ITERATIONS = 100000;
@@ -442,6 +475,7 @@ app.post('/api/login', async (c) => {
   const password = body.password || '';
   if (!username || !password) {
     await new Promise((r) => setTimeout(r, 500));
+    await logActivity({ sub: '', username: username || '(空)' }, 'login_failed', '登录失败：用户名或密码为空', clientIp(c));
     return c.json({ error: '用户名或密码错误' }, 401);
   }
 
@@ -455,9 +489,12 @@ app.post('/api/login', async (c) => {
       c.header('Set-Cookie', sessionCookie(token));
       const accessToken = signJWT({ sub: 'env-admin', username, roles: ['admin'], exp: Math.floor(Date.now() / 1000) + ACCESS_TTL });
       const refreshToken = issueRefresh('env-admin', c.req.header('user-agent'));
-      await logActivity({ sub: 'env-admin', username }, 'login', '管理员登录');
+      const __ip = clientIp(c);
+      const __loc = await ensureGeo(__ip);
+      await logActivity({ sub: 'env-admin', username }, 'login', `管理员登录（IP ${__ip} · ${__loc}）`, __ip);
       return c.json({ ok: true, roles: ['admin'], accessToken, refreshToken });
     }
+    await logActivity({ sub: '', username: username || '(空)' }, 'login_failed', '登录失败：密码错误', clientIp(c));
     await new Promise((r) => setTimeout(r, 500));
     return c.json({ error: '用户名或密码错误' }, 401);
   }
@@ -468,6 +505,7 @@ app.post('/api/login', async (c) => {
      FROM users u WHERE u.username = ?`
   ).get(username);
 
+    await logActivity({ sub: '', username: username || '(空)' }, 'login_failed', '登录失败：密码错误', clientIp(c));
   if (!row || row.status !== 'active' || !(await verifyPassword(password, row.password_hash))) {
     await new Promise((r) => setTimeout(r, 500));
     return c.json({ error: '用户名或密码错误' }, 401);
@@ -477,7 +515,9 @@ app.post('/api/login', async (c) => {
   c.header('Set-Cookie', sessionCookie(token));
   const accessToken = signJWT({ sub: row.id, username: row.username, roles, exp: Math.floor(Date.now() / 1000) + ACCESS_TTL });
   const refreshToken = issueRefresh(row.id, c.req.header('user-agent'));
-  await logActivity({ sub: row.id, username: row.username }, 'login', '登录成功');
+  const __ip = clientIp(c);
+  const __loc = await ensureGeo(__ip);
+  await logActivity({ sub: row.id, username: row.username }, 'login', `登录成功（IP ${__ip} · ${__loc}）`, __ip);
   return c.json({ ok: true, roles, accessToken, refreshToken });
 });
 
@@ -500,6 +540,7 @@ app.post('/api/logout', async (c) => {
     db.prepare('UPDATE refresh_tokens SET revoked = 1 WHERE token_hash = ?').run(sha256hex(body.refreshToken));
   }
   c.header('Set-Cookie', clearCookie());
+  await logActivity({ sub: '', username: body.username || '未知' }, 'logout', '退出登录', clientIp(c));
   return c.json({ ok: true });
 });
 
@@ -585,6 +626,17 @@ app.get('/api/file', async (c) => {
   const stream = Readable.toWeb(createReadStream(full));
   // download=1 强制下载（Content-Disposition: attachment），否则浏览器内联预览
   const forceDownload = c.req.query('download') === '1';
+  // 打开/下载文件埋点：打开按用户+文件 10 分钟去重，下载每次都记
+  if (forceDownload) {
+    await logActivity(user, 'download', `下载「${row.title}」（${key}）`, clientIp(c));
+  } else {
+    const _vk = `${user.sub}:${key}`;
+    const _vn = Date.now();
+    if (!_viewDedup.has(_vk) || _vn - _viewDedup.get(_vk) > 10 * 60 * 1000) {
+      _viewDedup.set(_vk, _vn);
+      await logActivity(user, 'view', `打开「${row.title}」（${key}）`, clientIp(c));
+    }
+  }
   const disposition = forceDownload ? 'attachment' : 'inline';
   const rawName = row.title || key.split('/').pop() || 'file';
   return new Response(stream, {
@@ -653,7 +705,7 @@ app.post('/api/upload', async (c) => {
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(key, file.name || 'file', finalSubjectId, user.sub, user.username, visibility, Date.now(), file.size, file.type || 'application/octet-stream');
 
-  await logActivity(user, 'upload', `上传 ${file.name || 'file'}${folderPath ? ` 到 ${folderPath}` : ''}`);
+  await logActivity(user, 'upload', `上传「${file.name || 'file'}」（${(file.size ?? 0) >= 1048576 ? ((file.size ?? 0) / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round((file.size ?? 0) / 1024)) + ' KB'}）到 ${folderPath || '根目录'}`, clientIp(c));
   return c.json({ ok: true, key, subject: subjectName });
 });
 
@@ -668,8 +720,14 @@ app.patch('/api/file', async (c) => {
   const res = requireOwner(user, body.key);
   if (res.error) return c.json({ error: res.error }, res.status);
 
-  if (body.title !== undefined) db.prepare('UPDATE files SET title = ? WHERE key = ?').run(String(body.title).trim(), body.key);
-  if (body.visibility !== undefined) db.prepare('UPDATE files SET visibility = ? WHERE key = ?').run(body.visibility, body.key);
+  if (body.title !== undefined) {
+    db.prepare('UPDATE files SET title = ? WHERE key = ?').run(String(body.title).trim(), body.key);
+    await logActivity(user, 'rename', `重命名「${res.file.title}」→「${String(body.title).trim()}」`, clientIp(c));
+  }
+  if (body.visibility !== undefined) {
+    db.prepare('UPDATE files SET visibility = ? WHERE key = ?').run(body.visibility, body.key);
+    await logActivity(user, 'visibility', `${body.visibility === 'published' ? '开放' : '取消开放'}「${res.file.title}」`, clientIp(c));
+  }
   return c.json({ ok: true, visibility: body.visibility ?? res.file.visibility });
 });
 
@@ -685,7 +743,7 @@ app.delete('/api/delete', async (c) => {
   const full = filePathOf(key);
   if (full && existsSync(full)) unlinkSync(full);
   db.prepare('DELETE FROM files WHERE key = ?').run(key);
-  await logActivity(user, 'delete', `删除 ${key.split('/').pop()}`);
+  await logActivity(user, 'delete', `删除「${key.split('/').pop()}」（${key}）`, clientIp(c));
   return c.json({ ok: true });
 });
 
@@ -725,6 +783,7 @@ app.post('/api/admin/users', async (c) => {
     ...body.roleIds.map((r) => db.prepare('INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)').run(id, r)),
     ...(body.subjectIds || []).map((s) => db.prepare('INSERT INTO user_subjects (user_id, subject_id) VALUES (?, ?)').run(id, s)),
   ];
+  await logActivity(admin, 'user_create', `创建用户「${body.username}」`, clientIp(c));
   return c.json({ ok: true, user: { id, username, created: [{ username, password: body.password, roleIds: body.roleIds, subjectIds: body.subjectIds || [] }], failed: [] } });
 });
 
@@ -780,6 +839,7 @@ app.post('/api/admin/users/batch', async (c) => {
     existing.add(username);
   }
 
+  await logActivity(admin, 'user_batch', `批量创建用户：成功 ${created.length} 个，失败 ${failed.length} 个`, clientIp(c));
   return c.json({ ok: true, created, failed });
 });
 
@@ -814,6 +874,7 @@ app.patch('/api/admin/user', async (c) => {
     db.prepare('DELETE FROM user_subjects WHERE user_id = ?').run(target.id);
     for (const s of body.subjectIds) db.prepare('INSERT INTO user_subjects (user_id, subject_id) VALUES (?, ?)').run(target.id, s);
   }
+  await logActivity(admin, 'user_update', `更新用户「${target.username}」（id=${body.id}）`, clientIp(c));
   return c.json({ ok: true });
 });
 
@@ -825,6 +886,7 @@ app.delete('/api/admin/user', async (c) => {
   if (id === admin.sub) return c.json({ error: '不能删除自己' }, 400);
   if (!db.prepare('SELECT id FROM users WHERE id = ?').get(id)) return c.json({ error: '用户不存在' }, 404);
   db.prepare('DELETE FROM users WHERE id = ?').run(id);
+  await logActivity(admin, 'user_delete', `删除用户（id=${id}）`, clientIp(c));
   return c.json({ ok: true });
 });
 
@@ -1183,6 +1245,7 @@ app.get('/api/app/download', (c) => {
   if (!existsSync(APK_FILE)) {
     return c.json({ error: '安装包尚未同步到服务器，请稍后重试' }, 503);
   }
+  logActivity({ sub: '', username: 'system' }, 'apk_download', '客户端下载更新安装包', clientIp(c));
   const stat = statSync(APK_FILE);
   const total = stat.size;
   const baseHeaders = {
@@ -1230,11 +1293,29 @@ app.get('/api/admin/logs', async (c) => {
   if (!(await requireAdmin(c))) return;
   const limit = Math.min(Number(c.req.query('limit') || 50) || 50, 200);
   const rows = db.prepare(
-    'SELECT id, username, action, detail, created_at FROM activity_logs ORDER BY created_at DESC LIMIT ?'
+    'SELECT id, username, action, detail, ip, created_at FROM activity_logs ORDER BY created_at DESC LIMIT ?'
   ).all(limit);
   return c.json({
     logs: rows.map((r) => ({
       id: r.id, username: r.username, action: r.action, detail: r.detail, createdAt: r.created_at,
+      ip: r.ip || '', location: geoOf(r.ip || ''),
+    })),
+  });
+});
+
+// 实时在线用户：最近 5 分钟内有过操作记录的用户
+app.get('/api/admin/online', async (c) => {
+  if (!(await requireAdmin(c))) return;
+  const since = Date.now() - 5 * 60 * 1000;
+  const rows = db.prepare(
+    `SELECT username, MAX(created_at) AS lastAt, COUNT(*) AS n FROM activity_logs
+     WHERE created_at >= ? AND username != 'system' GROUP BY username ORDER BY lastAt DESC`
+  ).all(since);
+  return c.json({
+    window: '5分钟',
+    users: rows.map((r) => ({
+      username: r.username, lastAt: r.lastAt, actions: r.n,
+      lastDetail: (db.prepare('SELECT detail FROM activity_logs WHERE username = ? ORDER BY created_at DESC LIMIT 1').get(r.username) || {}).detail || '',
     })),
   });
 });
@@ -1508,7 +1589,7 @@ app.post('/api/move', async (c) => {
     mkdirSync(path.dirname(newFull), { recursive: true });
     renameSync(oldFull, newFull);
     db.prepare('UPDATE files SET key = ? WHERE key = ?').run(newKey, chk.row.key);
-    await logActivity(user, 'move', `移动 ${chk.row.key.split('/').pop()} 到 ${targetDir || '根目录'}`);
+    await logActivity(user, 'move', `移动「${chk.row.key.split('/').pop()}」到 ${targetDir || '根目录'}`, clientIp(c));
     return c.json({ ok: true, key: newKey });
   }
 
@@ -1589,7 +1670,7 @@ app.post('/api/copy', async (c) => {
       `INSERT INTO files (key, title, subject_id, uploader_id, uploader_username, visibility, uploaded_at, size, content_type)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(newKey, chk.row.title, chk.row.subject_id, user.sub, user.username, chk.row.visibility, Date.now(), stat.size, chk.row.content_type);
-    await logActivity(user, 'copy', `复制 ${chk.row.key.split('/').pop()} 到 ${targetDir || '根目录'}`);
+    await logActivity(user, 'copy', `复制「${chk.row.key.split('/').pop()}」到 ${targetDir || '根目录'}`, clientIp(c));
     return c.json({ ok: true, key: newKey });
   }
 
@@ -1689,6 +1770,7 @@ app.post('/api/me/avatar', async (c) => {
     if (other !== ext && existsSync(f)) { try { unlinkSync(f); } catch {} }
   }
   db.prepare('UPDATE users SET avatar = ? WHERE id = ?').run(filename, me.sub);
+  await logActivity(me, 'avatar', `更新头像（${filename}）`, clientIp(c));
   return c.json({ ok: true, avatar: filename });
 });
 
@@ -1699,6 +1781,7 @@ app.patch('/api/me/profile', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const nickname = String(body.nickname ?? '').trim().slice(0, 24);
   db.prepare('UPDATE users SET nickname = ? WHERE id = ?').run(nickname || null, me.sub);
+  await logActivity(me, 'profile', `修改昵称为「${nickname || '(空)'}」`, clientIp(c));
   return c.json({ ok: true, nickname: nickname || null });
 });
 
@@ -1727,7 +1810,7 @@ app.post('/api/change-password', async (c) => {
 
   db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(await hashPassword(newPassword), row.id);
   db.prepare('UPDATE refresh_tokens SET revoked = 1 WHERE user_id = ?').run(row.id);
-  await logActivity(user, 'password_change', '修改了登录密码');
+  await logActivity(user, 'password_change', '修改了登录密码', clientIp(c));
   return c.json({ ok: true, message: '密码已修改，其他设备已下线' });
 });
 
@@ -1748,7 +1831,8 @@ function slugify(name) {
 }
 
 app.post('/api/admin/subjects', async (c) => {
-  if (!(await requireAdmin(c))) return;
+  const admin = await requireAdmin(c);
+  if (!admin) return;
   const body = await c.req.json().catch(() => ({}));
   const name = (body.name || '').trim();
   if (!name) return c.json({ error: '科目名不能为空' }, 400);
@@ -1764,25 +1848,30 @@ app.post('/api/admin/subjects', async (c) => {
   } else {
     db.prepare('UPDATE folders SET subject_id = ? WHERE path = ?').run(id, name);
   }
+  await logActivity(admin, 'subject_create', `新建科目「${name}」`, clientIp(c));
   return c.json({ ok: true, id });
 });
 
 app.patch('/api/admin/subjects', async (c) => {
-  if (!(await requireAdmin(c))) return;
+  const admin = await requireAdmin(c);
+  if (!admin) return;
   const body = await c.req.json().catch(() => ({}));
   if (!body.id) return c.json({ error: '缺少 id' }, 400);
   if (body.name !== undefined) db.prepare('UPDATE subjects SET name = ? WHERE id = ?').run(String(body.name).trim(), body.id);
   if (body.sortOrder !== undefined) db.prepare('UPDATE subjects SET sort_order = ? WHERE id = ?').run(body.sortOrder, body.id);
+  await logActivity(admin, 'subject_update', `更新科目信息（id=${body.id}）`, clientIp(c));
   return c.json({ ok: true });
 });
 
 app.delete('/api/admin/subjects', async (c) => {
-  if (!(await requireAdmin(c))) return;
+  const admin = await requireAdmin(c);
+  if (!admin) return;
   const id = c.req.query('id');
   if (!id) return c.json({ error: '缺少 id 参数' }, 400);
   const ref = db.prepare('SELECT COUNT(*) AS c FROM files WHERE subject_id = ?').get(id);
   if (ref.c > 0) return c.json({ error: '该科目下仍有文件，无法删除' }, 409);
   db.prepare('DELETE FROM subjects WHERE id = ?').run(id);
+  await logActivity(admin, 'subject_delete', `删除科目（id=${id}）`, clientIp(c));
   return c.json({ ok: true });
 });
 

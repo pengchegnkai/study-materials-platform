@@ -886,6 +886,46 @@ class _ChartTabState extends ConsumerState<_ChartTab> {
 }
 
 // ---------- 实时日志（二级页） ----------
+/// 实时在线用户条：最近 5 分钟有操作的用户
+class _OnlineStrip extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final online = ref.watch(adminOnlineProvider);
+    return online.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (users) {
+        if (users.isEmpty) return const SizedBox.shrink();
+        return Container(
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: const Color(0xFFECFDF5),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.how_to_reg_outlined, size: 15, color: Color(0xFF059669)),
+              const SizedBox(width: 6),
+              Text('在线 ${users.length}',
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF065F46))),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  users.map((u) => u.username).join('、'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12, color: Color(0xFF065F46)),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _LogsTab extends ConsumerStatefulWidget {
   const _LogsTab();
 
@@ -913,11 +953,30 @@ class _LogsTabState extends ConsumerState<_LogsTab> {
 
   static const _labels = <String, (String, Color, Color)>{
     'login': ('登录', Color(0xFFECFDF5), Color(0xFF059669)),
+    'logout': ('登出', Color(0xFFF3F4F6), Color(0xFF4B5563)),
+    'login_failed': ('登录失败', Color(0xFFFEF2F2), Color(0xFFDC2626)),
     'upload': ('上传', Color(0xFFEFF6FF), Color(0xFF2563EB)),
     'delete': ('删除', Color(0xFFFEF2F2), Color(0xFFDC2626)),
     'move': ('移动', Color(0xFFFFFBEB), Color(0xFFD97706)),
     'copy': ('复制', Color(0xFFF5F3FF), Color(0xFF7C3AED)),
     'password_change': ('改密', Color(0xFFF3F4F6), Color(0xFF4B5563)),
+    'view': ('打开', Color(0xFFF0F9FF), Color(0xFF0284C7)),
+    'download': ('下载', Color(0xFFEFF6FF), Color(0xFF1D4ED8)),
+    'apk_download': ('更新包', Color(0xFFF0F9FF), Color(0xFF0369A1)),
+    'visibility': ('开放', Color(0xFFECFDF5), Color(0xFF059669)),
+    'rename': ('重命名', Color(0xFFFFFBEB), Color(0xFFD97706)),
+    'folder_create': ('新建文件夹', Color(0xFFF5F3FF), Color(0xFF7C3AED)),
+    'folder_delete': ('删文件夹', Color(0xFFFEF2F2), Color(0xFFDC2626)),
+    'folder_move': ('移文件夹', Color(0xFFFFFBEB), Color(0xFFD97706)),
+    'user_create': ('建用户', Color(0xFFECFDF5), Color(0xFF059669)),
+    'user_batch': ('批量建用户', Color(0xFFECFDF5), Color(0xFF059669)),
+    'user_update': ('改用户', Color(0xFFFFFBEB), Color(0xFFD97706)),
+    'user_delete': ('删用户', Color(0xFFFEF2F2), Color(0xFFDC2626)),
+    'subject_create': ('建科目', Color(0xFFECFDF5), Color(0xFF059669)),
+    'subject_update': ('改科目', Color(0xFFFFFBEB), Color(0xFFD97706)),
+    'subject_delete': ('删科目', Color(0xFFFEF2F2), Color(0xFFDC2626)),
+    'avatar': ('头像', Color(0xFFF3F4F6), Color(0xFF4B5563)),
+    'profile': ('资料', Color(0xFFF3F4F6), Color(0xFF4B5563)),
   };
 
   @override
@@ -944,6 +1003,8 @@ class _LogsTabState extends ConsumerState<_LogsTab> {
             ],
           ),
         ),
+        // 实时在线用户（最近 5 分钟有操作）
+        _OnlineStrip(),
         Expanded(
           child: logs.when(
             loading: () => const Center(child: CircularProgressIndicator()),
@@ -976,7 +1037,10 @@ class _LogsTabState extends ConsumerState<_LogsTab> {
                             Text(l.username, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
                             const SizedBox(width: 8),
                             Expanded(
-                              child: Text(l.detail,
+                              child: Text(
+                                  l.ip.isEmpty
+                                      ? l.detail
+                                      : '${l.detail} · ${l.location.isEmpty ? l.ip : '$l.location ($l.ip)'}',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280))),

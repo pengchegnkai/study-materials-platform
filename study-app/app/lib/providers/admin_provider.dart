@@ -71,8 +71,22 @@ final adminChart24hProvider = FutureProvider<({int online, List<({String label, 
   return (online: online, points: points);
 });
 
-/// 实时日志
-final adminLogsProvider = FutureProvider<List<({String username, String action, String detail, int createdAt})>>((ref) async {
+/// 实时在线用户（最近 5 分钟有操作）
+final adminOnlineProvider = FutureProvider<List<({String username, int lastAt, int actions, String lastDetail})>>((ref) async {
+  final dio = ApiClient().dio;
+  final resp = await dio.get('/admin/online');
+  return (resp.data['users'] as List? ?? [])
+      .map((e) => (
+            username: '${e['username'] ?? ''}',
+            lastAt: e['lastAt'] as int? ?? 0,
+            actions: e['actions'] as int? ?? 0,
+            lastDetail: '${e['lastDetail'] ?? ''}',
+          ))
+      .toList();
+});
+
+/// 实时日志（含 IP 与归属地）
+final adminLogsProvider = FutureProvider<List<({String username, String action, String detail, int createdAt, String ip, String location})>>((ref) async {
   final dio = ApiClient().dio;
   final resp = await dio.get('/admin/logs', queryParameters: {'limit': 100});
   return (resp.data['logs'] as List? ?? [])
@@ -81,6 +95,8 @@ final adminLogsProvider = FutureProvider<List<({String username, String action, 
             action: '${e['action'] ?? ''}',
             detail: '${e['detail'] ?? ''}',
             createdAt: e['createdAt'] as int? ?? 0,
+            ip: '${e['ip'] ?? ''}',
+            location: '${e['location'] ?? ''}',
           ))
       .toList();
 });

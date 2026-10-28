@@ -1369,19 +1369,48 @@ interface LogItem {
   action: string;
   detail: string;
   createdAt: number;
+  ip?: string;
+  location?: string;
+}
+
+interface OnlineUser {
+  username: string;
+  lastAt: number;
+  actions: number;
+  lastDetail: string;
 }
 
 const ACTION_LABEL: Record<string, { label: string; cls: string }> = {
   login: { label: '登录', cls: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400' },
+  logout: { label: '登出', cls: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' },
+  login_failed: { label: '登录失败', cls: 'bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-400' },
   upload: { label: '上传', cls: 'bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-400' },
   delete: { label: '删除', cls: 'bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-400' },
   move: { label: '移动', cls: 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-400' },
   copy: { label: '复制', cls: 'bg-violet-50 text-violet-700 dark:bg-violet-950 dark:text-violet-400' },
   password_change: { label: '改密', cls: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' },
+  view: { label: '打开', cls: 'bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-400' },
+  download: { label: '下载', cls: 'bg-blue-50 text-blue-800 dark:bg-blue-950 dark:text-blue-300' },
+  apk_download: { label: '更新包', cls: 'bg-sky-50 text-sky-800 dark:bg-sky-950 dark:text-sky-300' },
+  visibility: { label: '开放', cls: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400' },
+  rename: { label: '重命名', cls: 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-400' },
+  folder_create: { label: '新建文件夹', cls: 'bg-violet-50 text-violet-700 dark:bg-violet-950 dark:text-violet-400' },
+  folder_delete: { label: '删文件夹', cls: 'bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-400' },
+  folder_move: { label: '移文件夹', cls: 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-400' },
+  user_create: { label: '建用户', cls: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400' },
+  user_batch: { label: '批量建用户', cls: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400' },
+  user_update: { label: '改用户', cls: 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-400' },
+  user_delete: { label: '删用户', cls: 'bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-400' },
+  subject_create: { label: '建科目', cls: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400' },
+  subject_update: { label: '改科目', cls: 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-400' },
+  subject_delete: { label: '删科目', cls: 'bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-400' },
+  avatar: { label: '头像', cls: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' },
+  profile: { label: '资料', cls: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' },
 };
 
 function LogsTab() {
   const [logs, setLogs] = useState<LogItem[] | null>(null);
+  const [online, setOnline] = useState<OnlineUser[]>([]);
   const [paused, setPaused] = useState(false);
 
   const load = useCallback(async () => {
@@ -1390,6 +1419,12 @@ function LogsTab() {
       setLogs(d.logs);
     } catch {
       setLogs([]);
+    }
+    try {
+      const o = await apiGet<{ users: OnlineUser[] }>('/api/admin/online');
+      setOnline(o.users ?? []);
+    } catch {
+      setOnline([]);
     }
   }, []);
 
@@ -1415,6 +1450,17 @@ function LogsTab() {
         </div>
       </div>
 
+      {online.length > 0 && (
+        <div className="mb-4 flex items-center gap-2 rounded-card border border-emerald-200 bg-emerald-50 px-4 py-2.5 dark:border-emerald-900 dark:bg-emerald-950/40">
+          <span className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-emerald-700 dark:text-emerald-400">
+            在线 {online.length}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-[12.5px] text-emerald-700 dark:text-emerald-400">
+            {online.map((u) => u.username).join('、')}
+          </span>
+        </div>
+      )}
+
       <div className="bg-white dark:bg-gray-900 border border-line dark:border-gray-800 rounded-card overflow-hidden">
         {!logs ? (
           <div className="p-5"><ListSkeleton count={6} /></div>
@@ -1428,7 +1474,9 @@ function LogsTab() {
                 <li key={l.id} className="flex items-center gap-3 px-4 py-3">
                   <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${a.cls}`}>{a.label}</span>
                   <span className="shrink-0 text-[13px] font-medium text-ink dark:text-gray-200">{l.username}</span>
-                  <span className="min-w-0 flex-1 truncate text-[13px] text-ink-secondary dark:text-gray-400">{l.detail}</span>
+                  <span className="min-w-0 flex-1 truncate text-[13px] text-ink-secondary dark:text-gray-400">
+                    {l.ip ? `${l.detail} · ${l.location && l.location !== '待查询' ? l.location : l.ip}${l.location && l.location !== '待查询' ? ` (${l.ip})` : ''}` : l.detail}
+                  </span>
                   <span className="shrink-0 text-[11.5px] text-ink-muted dark:text-gray-600 tabular-nums">
                     {formatTime(l.createdAt)}
                   </span>
