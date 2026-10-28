@@ -58,9 +58,12 @@ class _SubjectPageState extends ConsumerState<SubjectPage> {
     for (final p in _folders) {
       if (_currentDir == null) {
         if (p.isNotEmpty) out.add(p.contains('/') ? p.split('/').first : p);
-      } else if (p.startsWith('$_currentDir/')) {
-        final rest = p.substring(_currentDir.length + 1);
-        if (rest.isNotEmpty) out.add(rest.contains('/') ? rest.split('/').first : rest);
+      } else {
+        final dir = _currentDir;
+        if (dir != null && p.startsWith('$dir/')) {
+          final rest = p.substring(dir.length + 1);
+          if (rest.isNotEmpty) out.add(rest.contains('/') ? rest.split('/').first : rest);
+        }
       }
     }
     return out.toList()..sort();
