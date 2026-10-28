@@ -23,7 +23,7 @@ class _SubjectPageState extends ConsumerState<SubjectPage> {
   String _subjectName = '';
   String _subjectId = '';
   List<String> _folders = [];
-  String? _currentDir; // null = 显示全部文件；非空 = 指定目录
+  String _currentDir = ''; // 当前目录；进入科目后默认 = 科目根
 
   @override
   void initState() {
@@ -47,31 +47,36 @@ class _SubjectPageState extends ConsumerState<SubjectPage> {
     if (subjectId.isNotEmpty) {
       try {
         final folders = await _svc.folders(subjectId: subjectId);
-        if (mounted) setState(() => _folders = folders);
+        if (mounted) {
+          setState(() {
+            _folders = folders;
+            // 默认进入科目根目录：展示科目内的文件夹结构与根级文件
+            if (_currentDir.isEmpty) _currentDir = _subjectName;
+          });
+        }
       } catch (_) {}
     }
   }
 
-  /// 当前目录下的直接子文件夹
+  /// 当前目录下的直接子文件夹（以科目文件夹为根，展示真实内部结构）
   List<String> _subFolders() {
+    final root = _subjectName;
+    if (root.isEmpty) return const [];
     final out = <String>{};
     for (final p in _folders) {
-      if (_currentDir == null) {
-        if (p.isNotEmpty) out.add(p.contains('/') ? p.split('/').first : p);
-      } else {
-        final dir = _currentDir;
-        if (dir != null && p.startsWith('$dir/')) {
-          final rest = p.substring(dir.length + 1);
-          if (rest.isNotEmpty) out.add(rest.contains('/') ? rest.split('/').first : rest);
-        }
-      }
+      if (p == root || !p.startsWith('$root/')) continue;
+      final rest = p.substring(root.length + 1);
+      if (rest.isNotEmpty) out.add(rest.contains('/') ? rest.split('/').first : rest);
     }
     return out.toList()..sort();
   }
 
-  /// 面包屑段（科目 › 子目录…）
-  List<String> _crumbSegs() =>
-      (_currentDir ?? '').split('/').where((x) => x.isNotEmpty).toList();
+  /// 面包屑段（科目根下的子目录…）
+  List<String> _crumbSegs() {
+    final root = _subjectName;
+    if (_currentDir.isEmpty || !_currentDir.startsWith('$root/')) return const [];
+    return _currentDir.substring(root.length + 1).split('/').where((x) => x.isNotEmpty).toList();
+  }
 
   String _previewType(FileItem f) {
     final type = f.type.toLowerCase();
@@ -152,7 +157,7 @@ class _SubjectPageState extends ConsumerState<SubjectPage> {
           // 只显示当前目录内的文件（文件夹胶囊导航）
           final filtered = {
             for (final e in grouped.entries)
-              e.key: e.value.where((f) => _currentDir == null || f.dir == _currentDir).toList(),
+              e.key: e.value.where((f) => f.dir == _currentDir).toList(),
           }..removeWhere((_, list) => list.isEmpty);
           // subjectFilesProvider 已按上传者分组：Map<老师, List<FileItem>>
           final groups = filtered.entries.toList();
@@ -173,12 +178,12 @@ class _SubjectPageState extends ConsumerState<SubjectPage> {
                         ),
                         const Icon(Icons.chevron_right, size: 14, color: Color(0xFF9CA3AF)),
                         InkWell(
-                          onTap: () => setState(() => _currentDir = null),
+                          onTap: () => setState(() => _currentDir = _subjectName),
                           child: Text(_subjectName.isEmpty ? '…' : _subjectName,
                               style: TextStyle(
                                   fontSize: 13,
-                                  fontWeight: _currentDir == null ? FontWeight.w600 : FontWeight.w400,
-                                  color: _currentDir == null ? const Color(0xFF111827) : const Color(0xFF6B7280))),
+                                  fontWeight: _currentDir == _subjectName ? FontWeight.w600 : FontWeight.w400,
+                                  color: _currentDir == _subjectName ? const Color(0xFF111827) : const Color(0xFF6B7280))),
                         ),
                         for (var i = 0; i < _crumbSegs().length; i++) ...[
                           const Icon(Icons.chevron_right, size: 14, color: Color(0xFF9CA3AF)),
@@ -212,7 +217,7 @@ class _SubjectPageState extends ConsumerState<SubjectPage> {
                       for (final name in _subFolders())
                         InkWell(
                           onTap: () => setState(() =>
-                              _currentDir = _currentDir == null ? name : '$_currentDir/$name'),
+                              _currentDir = _currentDir == _subjectName ? name : '$_currentDir/$name'),
                           borderRadius: BorderRadius.circular(8),
                           child: Container(
                             height: 36,
@@ -248,11 +253,11 @@ class _SubjectPageState extends ConsumerState<SubjectPage> {
                   child: Column(children: [
                     const Icon(Icons.folder_off_outlined, size: 56, color: Color(0xFFD1D5DB)),
                     const SizedBox(height: 12),
-                    Text(_currentDir == null ? '暂无开放文件' : '此文件夹暂无文件',
+                    Text(_folders.isEmpty ? '暂无开放文件' : '此文件夹暂无文件',
                         style: const TextStyle(fontSize: 14, color: Color(0xFF6B7280))),
                     const SizedBox(height: 4),
                     Text(
-                        _currentDir == null
+                        _folders.isEmpty
                             ? '老师还没有开放该科目的资料'
                             : '换一个文件夹看看，或点击上方科目名返回全部',
                         style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF))),
