@@ -58,7 +58,7 @@ export function Layout({ children }: { children: ReactNode }) {
       <ToastProvider>
         <div className="min-h-screen flex flex-col bg-surface dark:bg-[#0B0F14]">
           <AppHeader />
-          <main className="flex-1 pb-[64px] sm:pb-0">{children}</main>
+          <main className="flex-1 pb-[64px] sm:pb-0" animate-fade-in>{children}</main>
           <MobileNav />
         </div>
       </ToastProvider>

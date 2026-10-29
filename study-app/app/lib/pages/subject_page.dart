@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../models/models.dart';
 import '../providers/files_provider.dart';
+import '../components/anim.dart';
 import '../services/platform_service.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
@@ -279,9 +280,12 @@ class _SubjectPageState extends ConsumerState<SubjectPage> {
                               fontSize: 13, fontWeight: FontWeight.w400, color: Color(0xFF6B7280))),
                     ])),
                   ),
-                  ...g.value.map((f) => Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _FileCard(file: f, onTap: () => _openPreview(f), onDownload: () => _download(f)),
+                  ...g.value.asMap().entries.map((e) => StaggerIn(
+                        delay: Duration(milliseconds: 40 * (e.key > 8 ? 8 : e.key)),
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _FileCard(file: e.value, onTap: () => _openPreview(f), onDownload: () => _download(f)),
+                        ),
                       )),
                 ],
             ],

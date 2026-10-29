@@ -52,13 +52,15 @@ export default function SubjectPage() {
       ) : (
         <div className="flex flex-col gap-10">
           {groups.map(([teacher, list]) => (
-            <section key={teacher}>
+            <section key={teacher} className="animate-rise-in">
               <h2 className="text-h3 font-semibold text-ink dark:text-gray-100 mb-4">
                 {teacher} · <span className="tabular-nums">{list.length}</span> 个文件
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                {list.map((f) => (
-                  <FileCard key={f.key} file={f} />
+                {list.map((f, fi) => (
+                  <div key={f.key} className="animate-rise-in" style={{ animationDelay: `${Math.min(fi, 9) * 45}ms` }}>
+                    <FileCard file={f} />
+                  </div>
                 ))}
               </div>
             </section>

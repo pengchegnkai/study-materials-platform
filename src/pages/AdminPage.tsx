@@ -658,8 +658,8 @@ function FilesTab() {
                 </tr>
               </thead>
               <tbody>
-                {dirFiles.map((f) => (
-                  <tr key={f.key} className="border-t border-line dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-all duration-150 ease-out">
+                {dirFiles.map((f, fi) => (
+                  <tr key={f.key} className="animate-rise-in border-t border-line dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-all duration-150 ease-out" style={{ animationDelay: `${Math.min(fi, 12) * 30}ms` }}>
                     <td className="px-5 py-3 text-ink dark:text-gray-100 max-w-[240px] truncate">{f.title}</td>
                     <td className="px-5 py-3 text-ink-secondary dark:text-gray-400">{f.subject ?? '—'}</td>
                     <td className="px-5 py-3 text-ink-secondary dark:text-gray-400">{f.uploader}</td>
@@ -688,8 +688,8 @@ function FilesTab() {
             </table>
           </div>
           <div className="md:hidden flex flex-col">
-            {dirFiles.map((f) => (
-              <div key={f.key} className="border-b border-line dark:border-gray-800 p-4 last:border-b-0">
+            {dirFiles.map((f, fi) => (
+              <div key={f.key} className="animate-rise-in border-b border-line dark:border-gray-800 p-4 last:border-b-0" style={{ animationDelay: `${Math.min(fi, 12) * 30}ms` }}>
                 <div className="flex items-start justify-between gap-2">
                   <p className="text-[14px] font-medium text-ink dark:text-gray-100 flex-1 min-w-0 truncate">{f.title}</p>
                   <Badge tone={f.visibility === 'published' ? 'published' : 'private'}>

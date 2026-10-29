@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../components/anim.dart';
 import '../components/user_avatar.dart';
 import '../models/models.dart';
 import '../providers/auth_provider.dart';
@@ -73,7 +74,10 @@ class HomePage extends ConsumerWidget {
                     childAspectRatio: 2.9,
                   ),
                   itemCount: list.length,
-                  itemBuilder: (_, i) => _SubjectCard(list[i]),
+                  itemBuilder: (_, i) => StaggerIn(
+                    delay: Duration(milliseconds: 45 * (i > 9 ? 9 : i)),
+                    child: TapScale(onTap: () => context.push('/subject/${list[i].slug}'), child: _SubjectCard(list[i])),
+                  ),
                 ),
             ],
           ),

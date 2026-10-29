@@ -57,6 +57,10 @@ export default {
           from: { opacity: '0', transform: 'scale(0.98)' },
           to: { opacity: '1', transform: 'scale(1)' },
         },
+        'rise-in': {
+          from: { opacity: '0', transform: 'translateY(14px)' },
+          to: { opacity: '1', transform: 'translateY(0)' },
+        },
         'toast-in': {
           from: { opacity: '0', transform: 'translateY(-8px)' },
           to: { opacity: '1', transform: 'translateY(0)' },
@@ -67,6 +71,7 @@ export default {
         'fade-in': 'fade-in 150ms ease-out',
         'modal-in': 'modal-in 100ms ease-out',
         'toast-in': 'toast-in 150ms ease-out',
+        'rise-in': 'rise-in 420ms cubic-bezier(0.16,1,0.3,1) both',
       },
     },
   },
