@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Download, FileImage, FileText, Presentation, FileType2 } from 'lucide-react';
+import { Download, FileImage, FileText, Presentation, FileSpreadsheet, FileCode2, File } from 'lucide-react';
 import { Badge } from './Badge';
 import { formatSize, formatTime, TYPE_LABELS } from '../utils/format';
 
@@ -21,9 +21,10 @@ function TypeIcon({ type }: { type: string }) {
   const map: Record<string, { icon: typeof FileText; cls: string }> = {
     markdown: { icon: FileText, cls: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400' },
     pptx: { icon: Presentation, cls: 'bg-orange-50 text-orange-600 dark:bg-orange-950 dark:text-orange-400' },
-    docx: { icon: FileType2, cls: 'bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400' },
-    excel: { icon: FileType2, cls: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400' },
-    pdf: { icon: FileType2, cls: 'bg-rose-50 text-rose-600 dark:bg-rose-950 dark:text-rose-400' },
+    docx: { icon: FileText, cls: 'bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400' },
+    excel: { icon: FileSpreadsheet, cls: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400' },
+    pdf: { icon: File, cls: 'bg-rose-50 text-rose-600 dark:bg-rose-950 dark:text-rose-400' },
+    html: { icon: FileCode2, cls: 'bg-pink-50 text-pink-600 dark:bg-pink-950 dark:text-pink-400' },
     image: { icon: FileImage, cls: 'bg-teal-50 text-teal-600 dark:bg-teal-950 dark:text-teal-400' },
   };
   const item = map[type] ?? { icon: FileText, cls: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400' };

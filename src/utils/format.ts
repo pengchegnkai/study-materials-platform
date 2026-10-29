@@ -18,6 +18,9 @@ export const TYPE_LABELS: Record<string, string> = {
   markdown: 'Markdown',
   pptx: 'PPT',
   docx: 'Word',
+  excel: 'Excel',
+  pdf: 'PDF',
+  html: '网页',
   image: '图片',
   other: '文件',
 };
