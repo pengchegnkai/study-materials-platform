@@ -284,7 +284,7 @@ class _SubjectPageState extends ConsumerState<SubjectPage> {
                         delay: Duration(milliseconds: 40 * (e.key > 8 ? 8 : e.key)),
                         child: Padding(
                           padding: const EdgeInsets.only(bottom: 12),
-                          child: _FileCard(file: e.value, onTap: () => _openPreview(f), onDownload: () => _download(f)),
+                          child: _FileCard(file: e.value, onTap: () => _openPreview(e.value), onDownload: () => _download(e.value)),
                         ),
                       )),
                 ],
