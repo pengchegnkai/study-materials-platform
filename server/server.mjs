@@ -459,6 +459,7 @@ function extType(key, contentType) {
   if (['docx', 'doc'].includes(ext)) return 'docx';
   if (['xlsx', 'xls', 'csv'].includes(ext)) return 'excel';
   if (ext === 'pdf') return 'pdf';
+  if (['html', 'htm'].includes(ext)) return 'html';
   if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(ext)) return 'image';
   if (contentType?.startsWith('image/')) return 'image';
   return 'other';

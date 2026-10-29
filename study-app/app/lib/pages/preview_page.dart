@@ -254,6 +254,8 @@ class _PreviewPageState extends State<PreviewPage> {
       label = '图片'; bg = const Color(0xFFFAF5FF); fg = const Color(0xFF9333EA);
     } else if (type == 'markdown' || ['md', 'markdown'].contains(ext)) {
       label = 'MD'; bg = const Color(0xFFEEF2FF); fg = const Color(0xFF4F46E5);
+    } else if (type == 'html' || ['html', 'htm'].contains(ext)) {
+      label = 'HTML'; bg = const Color(0xFFFFF1F2); fg = const Color(0xFFE11D48);
     } else {
       return const SizedBox.shrink();
     }
@@ -309,6 +311,7 @@ class _PreviewPageState extends State<PreviewPage> {
       case 'excel':
       case 'docx':
       case 'pptx':
+      case 'html':
         return OfficePreviewPage(kind: widget.type, bytes: bytes, title: widget.title);
       default:
         // PPT/Word 等：提示通过分享/用其他应用打开

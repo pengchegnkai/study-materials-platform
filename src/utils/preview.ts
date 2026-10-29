@@ -10,10 +10,10 @@ import MarkdownIt from 'markdown-it';
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true });
 
-export type PreviewKind = 'markdown' | 'docx' | 'pptx' | 'excel' | 'pdf' | 'image' | 'other';
+export type PreviewKind = 'markdown' | 'docx' | 'pptx' | 'excel' | 'pdf' | 'image' | 'html' | 'other';
 
 export function kindFromType(type: string): PreviewKind {
-  if (type === 'markdown' || type === 'docx' || type === 'pptx' || type === 'excel' || type === 'pdf' || type === 'image') return type;
+  if (type === 'markdown' || type === 'docx' || type === 'pptx' || type === 'excel' || type === 'pdf' || type === 'image' || type === 'html') return type;
   return 'other';
 }
 
@@ -117,6 +117,35 @@ export async function renderPreview(
     // 容器在构造函数传入；preview 只接收数据（库无 render 方法）
     const renderer = new Renderer(container);
     await renderer.preview(buffer);
+    // slide 固定像素宽，窄屏溢出会被裁剪；按容器宽度等比缩放全部 slide
+    await new Promise((r) => setTimeout(r, 200));
+    const cw = container.clientWidth;
+    if (cw > 0) {
+      const slides = Array.from(container.children) as HTMLElement[];
+      let maxW = 0;
+      for (const d of slides) maxW = Math.max(maxW, d.scrollWidth || 0);
+      if (maxW > cw + 2) {
+        const z = cw / maxW;
+        for (const d of slides) d.style.zoom = String(z);
+      }
+    }
+    return;
+  }
+
+  if (kind === 'html') {
+    // 沙箱 iframe：允许脚本但隔离源（不可访问本站 Cookie/存储）
+    let text = new TextDecoder().decode(buffer);
+    if (text.includes('\uFFFD')) {
+      try {
+        const gbk = new TextDecoder('gbk').decode(buffer);
+        if (!gbk.includes('\uFFFD')) text = gbk;
+      } catch {}
+    }
+    const frame = document.createElement('iframe');
+    frame.setAttribute('sandbox', 'allow-scripts');
+    frame.style.cssText = 'width:100%;height:calc(100vh - 190px);min-height:480px;border:0;display:block;background:#fff;';
+    frame.srcdoc = text;
+    container.appendChild(frame);
     return;
   }
 

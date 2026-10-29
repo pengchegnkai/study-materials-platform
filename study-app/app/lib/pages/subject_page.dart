@@ -86,6 +86,7 @@ class _SubjectPageState extends ConsumerState<SubjectPage> {
     if (type == 'pptx' || type.contains('presentation') || ['ppt', 'pptx'].contains(ext)) return 'pptx';
     if (type == 'docx' || type.contains('word') || ['doc', 'docx'].contains(ext)) return 'docx';
     if (type.contains('pdf') || ext == 'pdf') return 'pdf';
+    if (type == 'html' || ['html', 'htm'].contains(ext)) return 'html';
     return 'other';
   }
 
