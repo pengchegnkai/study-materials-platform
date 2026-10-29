@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
-import { Download, FileImage, FileText, Presentation, FileSpreadsheet, FileCode2, File } from 'lucide-react';
+import { Download, FileImage, FileText, Presentation, Video, AudioLines, File } from 'lucide-react';
 import { Badge } from './Badge';
-import { formatSize, formatTime, TYPE_LABELS } from '../utils/format';
+import { formatSize, formatTime } from '../utils/format';
 
 export interface ManifestFile {
   key: string;
@@ -18,20 +18,40 @@ export interface ManifestFile {
 
 /** 类型图标：每种文件类型一个专属彩色块，直观好认 */
 function TypeIcon({ type }: { type: string }) {
+  // 与客户端 _TypeIcon 完全同款：类型 → 图标 + 配色
   const map: Record<string, { icon: typeof FileText; cls: string }> = {
-    markdown: { icon: FileText, cls: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400' },
+    image: { icon: FileImage, cls: 'bg-teal-50 text-teal-600 dark:bg-teal-950 dark:text-teal-400' },
     pptx: { icon: Presentation, cls: 'bg-orange-50 text-orange-600 dark:bg-orange-950 dark:text-orange-400' },
     docx: { icon: FileText, cls: 'bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400' },
-    excel: { icon: FileSpreadsheet, cls: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400' },
-    pdf: { icon: File, cls: 'bg-rose-50 text-rose-600 dark:bg-rose-950 dark:text-rose-400' },
-    html: { icon: FileCode2, cls: 'bg-pink-50 text-pink-600 dark:bg-pink-950 dark:text-pink-400' },
-    image: { icon: FileImage, cls: 'bg-teal-50 text-teal-600 dark:bg-teal-950 dark:text-teal-400' },
+    markdown: { icon: FileText, cls: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400' },
+    pdf: { icon: FileText, cls: 'bg-rose-50 text-rose-600 dark:bg-rose-950 dark:text-rose-400' },
+    video: { icon: Video, cls: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400' },
+    audio: { icon: AudioLines, cls: 'bg-pink-50 text-pink-600 dark:bg-pink-950 dark:text-pink-400' },
   };
-  const item = map[type] ?? { icon: FileText, cls: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400' };
+  const item = map[type] ?? { icon: File, cls: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400' };
   const Icon = item.icon;
   return (
-    <span className={`shrink-0 w-11 h-11 rounded-xl flex items-center justify-center ${item.cls}`}>
+    <span className={`shrink-0 w-11 h-11 rounded-[14px] flex items-center justify-center ${item.cls}`}>
       <Icon size={18} strokeWidth={1.8} />
+    </span>
+  );
+}
+
+/** 类型胶囊：与客户端 _TypePill 同款（彩色小胶囊 + 短标签） */
+function TypePill({ type }: { type: string }) {
+  const map: Record<string, { label: string; cls: string }> = {
+    pdf: { label: 'PDF', cls: 'bg-rose-50 text-rose-600 dark:bg-rose-950 dark:text-rose-400' },
+    docx: { label: 'WORD', cls: 'bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400' },
+    pptx: { label: 'PPT', cls: 'bg-orange-50 text-orange-600 dark:bg-orange-950 dark:text-orange-400' },
+    image: { label: '图片', cls: 'bg-purple-50 text-purple-600 dark:bg-purple-950 dark:text-purple-400' },
+    markdown: { label: 'MD', cls: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400' },
+    excel: { label: 'EXCEL', cls: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400' },
+    html: { label: '网页', cls: 'bg-pink-50 text-pink-600 dark:bg-pink-950 dark:text-pink-400' },
+  };
+  const item = map[type] ?? { label: '文件', cls: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400' };
+  return (
+    <span className={`shrink-0 inline-flex items-center rounded-full px-[7px] py-0.5 text-[10.5px] font-semibold ${item.cls}`}>
+      {item.label}
     </span>
   );
 }
@@ -57,7 +77,7 @@ export function FileCard({ file }: { file: ManifestFile }) {
 
       {/* 底部：类型标签 + 悬浮操作（预览 / 下载） */}
       <div className="mt-3.5 pt-3 border-t border-line/60 dark:border-gray-800 flex items-center justify-between">
-        <p className="text-[12px] text-ink-muted dark:text-gray-600">{TYPE_LABELS[file.type] ?? file.type}</p>
+        <TypePill type={file.type} />
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
           <span
             className="h-7 px-2.5 inline-flex items-center rounded-full bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-300 text-[11.5px] font-medium"
