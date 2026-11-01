@@ -15,6 +15,7 @@ import { createReadStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
 import path from 'node:path';
+import { initAgent } from './agent.mjs';
 
 const ROOT = path.dirname(new URL(import.meta.url).pathname);
 const DATA_DIR = path.join(ROOT, '..', 'data');
@@ -1913,6 +1914,26 @@ app.delete('/api/admin/permissions', async (c) => {
   const id = c.req.query('id');
   if (!id) return c.json({ error: '缺少 id 参数' }, 400);
   db.prepare('DELETE FROM file_permissions WHERE id = ?').run(id);
+  return c.json({ ok: true });
+});
+
+// ---------- 题库采集 Agent（详见 server/agent.mjs） ----------
+const agent = initAgent({ db, logActivity, requireAdmin, requireActive, rid, sha256hex });
+app.route('/api/admin/agent', agent.admin);
+
+// 学生举报题目（采集 Agent 熔断依据之一：answer_wrong）
+app.post('/api/questions/report', async (c) => {
+  const user = await requireActive(c);
+  if (!user) return;
+  const body = await c.req.json().catch(() => ({}));
+  const passageId = String(body.passageId || '');
+  const reason = String(body.reason || 'other');
+  if (!passageId) return c.json({ error: '缺少 passageId' }, 400);
+  if (!['answer_wrong', 'other'].includes(reason)) return c.json({ error: 'reason 取值非法' }, 400);
+  if (!db.prepare('SELECT 1 FROM passages WHERE id=?').get(passageId)) return c.json({ error: '内容不存在' }, 404);
+  db.prepare('INSERT INTO question_reports (id, passage_id, user_id, username, reason, detail, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(rid('rep'), passageId, user.sub, user.username, reason, String(body.detail || '').slice(0, 500), Date.now());
+  agent.checkReportFreeze?.();
   return c.json({ ok: true });
 });
 

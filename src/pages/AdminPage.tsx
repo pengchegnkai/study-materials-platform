@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Bot,
   BookOpen,
   Copy,
   Download,
@@ -32,7 +33,7 @@ import { Modal } from '../components/Modal';
 import { EmptyState } from '../components/EmptyState';
 import { ListSkeleton } from '../components/Skeleton';
 
-type Tab = 'dashboard' | 'chart' | 'logs' | 'files' | 'users' | 'subjects';
+type Tab = 'dashboard' | 'chart' | 'logs' | 'files' | 'users' | 'subjects' | 'agent';
 
 interface DashboardData {
   online: number;
@@ -114,6 +115,7 @@ export default function AdminPage() {
     { key: 'dashboard', label: '数据看板', icon: BarChart2 },
     { key: 'chart', label: '24 小时曲线', icon: Activity },
     { key: 'logs', label: '实时日志', icon: ScrollText },
+    { key: 'agent', label: '采集 Agent', icon: Bot },
     { key: 'files', label: '文件管理', icon: FileText },
     { key: 'users', label: '用户管理', icon: Users },
     { key: 'subjects', label: '科目管理', icon: FolderTree },
@@ -153,6 +155,7 @@ export default function AdminPage() {
         {tab === 'files' && <FilesTab />}
         {tab === 'users' && <UsersTab />}
         {tab === 'subjects' && <SubjectsTab />}
+        {tab === 'agent' && <AgentTab />}
       </div>
     </div>
   );
@@ -1487,5 +1490,352 @@ function LogsTab() {
         )}
       </div>
     </div>
+  );
+}
+
+// ---------- 采集 Agent ----------
+interface AgentSeed {
+  id: string;
+  url: string;
+  last_crawled_at: number | null;
+  total_output: number;
+  zero_streak: number;
+}
+
+interface AgentStatus {
+  enabled: boolean;
+  frozen: boolean;
+  frozenReason: string | null;
+  frozenAt: number | null;
+  lastRunAt: number | null;
+  lastSeedUrl: string | null;
+  todayPublished: number;
+  dailyLimit: number;
+  domains: string[];
+  aiConfigured: boolean;
+  lastRun: AgentRun | null;
+  seeds: AgentSeed[];
+}
+
+interface AgentRun {
+  id: string;
+  started_at: number;
+  finished_at: number | null;
+  seed_url: string;
+  discovered_count: number;
+  fetched_count: number;
+  extracted_count: number;
+  published_count: number;
+  rejected_count: number;
+  status: string;
+}
+
+interface AgentDecision {
+  id: string;
+  url: string;
+  action: string;
+  quality_score: number | null;
+  reasons: string | null;
+  passage_id: string | null;
+  created_at: number;
+}
+
+interface PendingPassage {
+  id: string;
+  title: string;
+  source_url: string;
+  domain: string;
+  source_type: string;
+  quality_score: number | null;
+  reasons: string | null;
+  word_count: number | null;
+  question_count: number;
+  created_at: number;
+}
+
+const DECISION_LABELS: Record<string, string> = {
+  discovered: '发现', fetched: '抓取', extracted: '提取', duplicate: '重复',
+  low_quality: '低质量', missing_answer: '缺答案', missing_source: '缺来源',
+  published: '已发布', rejected: '已拒绝', failed: '失败',
+};
+
+function AgentTab() {
+  const { toast } = useToast();
+  const [status, setStatus] = useState<AgentStatus | null>(null);
+  const [runs, setRuns] = useState<AgentRun[]>([]);
+  const [expandedRun, setExpandedRun] = useState<string | null>(null);
+  const [decisions, setDecisions] = useState<AgentDecision[]>([]);
+  const [decisionFilter, setDecisionFilter] = useState('');
+  const [pending, setPending] = useState<PendingPassage[]>([]);
+  const [newSeed, setNewSeed] = useState('');
+  const [rollbackDomain, setRollbackDomain] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const st = await apiGet<AgentStatus>('/api/admin/agent/status');
+      setStatus(st);
+      const r = await apiGet<{ runs: AgentRun[] }>('/api/admin/agent/runs?limit=30');
+      setRuns(r.runs);
+      const p = await apiGet<{ pending: PendingPassage[] }>('/api/admin/agent/pending');
+      setPending(p.pending);
+    } catch {
+      setStatus(null);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const act = async (fn: () => Promise<unknown>, okMsg?: string) => {
+    setBusy(true);
+    try {
+      await fn();
+      if (okMsg) toast(okMsg, 'success');
+      await load();
+    } catch (e: unknown) {
+      toast(e instanceof Error ? e.message.replace('Exception: ', '') : '操作失败', 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openDecisions = async (runId: string) => {
+    if (expandedRun === runId) { setExpandedRun(null); return; }
+    setExpandedRun(runId);
+    setDecisions([]);
+    try {
+      const q = decisionFilter ? `&action=${decisionFilter}` : '';
+      const d = await apiGet<{ decisions: AgentDecision[] }>(`/api/admin/agent/runs/${runId}/decisions?1=1${q}`);
+      setDecisions(d.decisions);
+    } catch { setDecisions([]); }
+  };
+
+  if (!status) return <ListSkeleton count={4} />;
+
+  const stateLabel = status.frozen ? '已冻结' : status.enabled ? '运行中' : '已关闭';
+  const stateCls = status.frozen
+    ? 'bg-red-50 text-red-700 ring-1 ring-red-200 dark:bg-red-950 dark:text-red-400'
+    : status.enabled
+      ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-400'
+      : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400';
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="hidden lg:block text-h2 font-semibold text-ink dark:text-gray-100">采集 Agent</h1>
+        <div className="flex items-center gap-2">
+          {status.enabled && !status.frozen && (
+            <Button variant="secondary" size="sm" disabled={busy} onClick={() => act(() => apiPost('/api/admin/agent/freeze', {}), '已冻结')}>
+              冻结
+            </Button>
+          )}
+          {status.frozen ? (
+            <Button variant="primary" size="sm" disabled={busy} onClick={() => act(() => apiPost('/api/admin/agent/unfreeze', {}), '已解冻')}>
+              解冻
+            </Button>
+          ) : status.enabled ? (
+            <Button variant="secondary" size="sm" disabled={busy} onClick={() => act(() => apiPost('/api/admin/agent/disable', {}), '已停用')}>
+              停用 Agent
+            </Button>
+          ) : (
+            <Button variant="primary" size="sm" disabled={busy} onClick={() => act(() => apiPost('/api/admin/agent/enable', {}), '已启用')}>
+              启动 Agent
+            </Button>
+          )}
+          <Button variant="secondary" size="sm" disabled={busy || !status.enabled} onClick={() => act(() => apiPost('/api/admin/agent/run-now', {}), '已触发一轮')}>
+            立即跑一轮
+          </Button>
+          <Button variant="secondary" size="sm" onClick={load}>刷新</Button>
+        </div>
+      </div>
+
+      {/* 冻结红色横幅 */}
+      {status.frozen && (
+        <div className="mb-4 rounded-card border border-red-300 bg-red-50 px-4 py-3 dark:border-red-900 dark:bg-red-950/50">
+          <p className="text-[14px] font-semibold text-red-700 dark:text-red-400">
+            Agent 已冻结：{status.frozenReason || '未知原因'}
+          </p>
+          <p className="mt-1 text-[12px] text-red-600 dark:text-red-400">
+            冻结后 Cron 仍会触发但 Agent 不执行任何抓取，需人工确认解冻。
+          </p>
+        </div>
+      )}
+
+      {/* 状态卡 */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        {[
+          { label: 'Agent 状态', value: stateLabel, cls: stateCls },
+          { label: '今日已发布', value: `${status.todayPublished} / ${status.dailyLimit}` },
+          { label: 'AI 引擎', value: status.aiConfigured ? '已配置' : '未配置' },
+          { label: '白名单域名', value: `${status.domains.length} 个` },
+        ].map((c) => (
+          <div key={c.label} className="bg-white dark:bg-gray-900 border border-line dark:border-gray-800 rounded-card p-4">
+            <p className="text-[12px] text-ink-muted dark:text-gray-500">{c.label}</p>
+            <p className={`mt-1 text-[15px] font-semibold ${c.cls ?? 'text-ink dark:text-gray-100'}`}>{c.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* 运行记录 */}
+      <div className="bg-white dark:bg-gray-900 border border-line dark:border-gray-800 rounded-card overflow-hidden mb-6">
+        <div className="px-4 py-3 border-b border-line dark:border-gray-800 text-[13px] font-semibold">运行记录</div>
+        {runs.length === 0 ? (
+          <EmptyState icon={Bot} title="暂无运行记录" description="Agent 启用后每 6 小时自动运行一轮" />
+        ) : (
+          <ul className="divide-y divide-line dark:divide-gray-800">
+            {runs.map((r) => (
+              <li key={r.id}>
+                <button
+                  onClick={() => openDecisions(r.id)}
+                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-all duration-150 text-left cursor-pointer"
+                >
+                  <span className="shrink-0 text-[12.5px] font-medium text-ink dark:text-gray-200 tabular-nums">{formatTime(r.started_at)}</span>
+                  <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink-secondary dark:text-gray-400">{r.seed_url || '—'}</span>
+                  <span className="shrink-0 text-[11.5px] text-ink-muted dark:text-gray-500 tabular-nums">
+                    发现 {r.discovered_count} · 发布 {r.published_count} · 拒绝 {r.rejected_count}
+                  </span>
+                  <Badge tone={r.status === 'done' ? 'published' : r.status === 'running' ? 'role' : 'private'}>{r.status}</Badge>
+                </button>
+                {expandedRun === r.id && (
+                  <div className="px-4 pb-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Select
+                        value={decisionFilter}
+                        onChange={(e) => { setDecisionFilter(e.target.value); openDecisions(expandedRun!); }}
+                        className="!w-40"
+                      >
+                        <option value="">全部动作</option>
+                        {Object.entries(DECISION_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                      </Select>
+                      <Button variant="secondary" size="sm" onClick={() => act(() => apiPost(`/api/admin/agent/runs/${r.id}/rollback`, {}), '该轮已全部下架')}>
+                        下架该轮发布内容
+                      </Button>
+                    </div>
+                    {decisions.length === 0 ? (
+                      <p className="text-[12px] text-ink-muted py-2">无匹配决策</p>
+                    ) : (
+                      <ul className="divide-y divide-line dark:divide-gray-800 rounded border border-line dark:border-gray-800">
+                        {decisions.map((d) => (
+                          <li key={d.id} className="flex items-center gap-2 px-3 py-2 text-[12px]">
+                            <span className="shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-semibold bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                              {DECISION_LABELS[d.action] ?? d.action}
+                            </span>
+                            <span className="min-w-0 flex-1 truncate text-ink-secondary dark:text-gray-400">{d.url}</span>
+                            {d.quality_score != null && <span className="shrink-0 tabular-nums text-ink-muted">{d.quality_score} 分</span>}
+                            {d.reasons && <span className="shrink-0 max-w-[240px] truncate text-red-500">{(() => { try { return JSON.parse(d.reasons).join('；'); } catch { return d.reasons; } })()}</span>}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* 待审核区 */}
+      <div className="bg-white dark:bg-gray-900 border border-line dark:border-gray-800 rounded-card overflow-hidden mb-6">
+        <div className="px-4 py-3 border-b border-line dark:border-gray-800 text-[13px] font-semibold">
+          待审核区（Agent 抓取未过门禁）· {pending.length} 篇
+        </div>
+        {pending.length === 0 ? (
+          <p className="px-4 py-6 text-center text-[13px] text-ink-muted">暂无待审核内容</p>
+        ) : (
+          <ul className="divide-y divide-line dark:divide-gray-800">
+            {pending.map((p) => (
+              <li key={p.id} className="px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <span className="shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-semibold bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400 tabular-nums">
+                    {p.quality_score ?? '—'} 分
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink dark:text-gray-200">{p.title}</span>
+                  <span className="shrink-0 text-[11.5px] text-ink-muted tabular-nums">{p.question_count} 题</span>
+                  <Button variant="secondary" size="sm" disabled={busy} onClick={() => act(() => apiPost(`/api/admin/agent/pending/${p.id}/approve`, {}), '已通过发布')}>
+                    通过
+                  </Button>
+                  <Button variant="ghost" size="sm" disabled={busy} onClick={() => act(() => apiDelete(`/api/admin/agent/pending/${p.id}`), '已删除')}>
+                    <Trash2 size={14} />
+                  </Button>
+                </div>
+                <p className="mt-1 text-[11.5px] text-ink-muted dark:text-gray-500 truncate">
+                  {p.source_url} · {p.source_type || 'unknown'}
+                  {p.reasons && (() => { try { return ` · ${JSON.parse(p.reasons).join('；')}`; } catch { return ''; } })()}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* 种子管理 + 按域名回滚 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-white dark:bg-gray-900 border border-line dark:border-gray-800 rounded-card p-4">
+          <p className="text-[13px] font-semibold mb-3">种子列表页</p>
+          <div className="flex gap-2 mb-3">
+            <Input value={newSeed} onChange={(e) => setNewSeed(e.target.value)} placeholder="https://…（须在白名单域名内）" className="flex-1" />
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={busy || !newSeed.trim()}
+              onClick={() => act(async () => { await apiPost('/api/admin/agent/seeds', { url: newSeed.trim() }); setNewSeed(''); }, '种子已添加')}
+            >
+              <Plus size={14} />
+            </Button>
+          </div>
+          <SeedSettings seeds={status.seeds ?? []} busy={busy} act={act} />
+        </div>
+        <div className="bg-white dark:bg-gray-900 border border-line dark:border-gray-800 rounded-card p-4">
+          <p className="text-[13px] font-semibold mb-3">按域名下架（一键回滚）</p>
+          <div className="flex gap-2">
+            <Input value={rollbackDomain} onChange={(e) => setRollbackDomain(e.target.value)} placeholder="example.com" className="flex-1" />
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={busy || !rollbackDomain.trim()}
+              onClick={() => act(async () => {
+                await apiPost('/api/admin/agent/rollback-domain', { domain: rollbackDomain.trim() });
+                setRollbackDomain('');
+              }, '该域名内容已全部下架')}
+            >
+              下架
+            </Button>
+          </div>
+          <p className="mt-2 text-[11.5px] text-ink-muted">将该域名来源的所有已发布内容改为 private（不影响人工创建的内容）。</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SeedSettings({ seeds, busy, act }: {
+  seeds: AgentSeed[];
+  busy: boolean;
+  act: (fn: () => Promise<unknown>, okMsg?: string) => Promise<void>;
+}) {
+  return (
+    <ul className="divide-y divide-line dark:divide-gray-800">
+      {seeds.length === 0 && <li className="py-3 text-[12px] text-ink-muted">暂无种子，添加后 Agent 才能开始发现题目页</li>}
+      {seeds.map((s) => (
+        <li key={s.id} className="flex items-center gap-2 py-2">
+          <span className={`min-w-0 flex-1 truncate text-[12px] ${s.zero_streak >= 3 ? 'text-amber-600 dark:text-amber-400' : 'text-ink-secondary dark:text-gray-400'}`}>
+            {s.url}
+            {s.zero_streak >= 3 && '（该种子可能已失效）'}
+          </span>
+          <span className="shrink-0 text-[11px] text-ink-muted tabular-nums">
+            {s.last_crawled_at ? formatTime(s.last_crawled_at) : '未抓取'} · 产出 {s.total_output}
+          </span>
+          <button
+            disabled={busy}
+            onClick={() => act(() => apiDelete(`/api/admin/agent/seeds?id=${s.id}`), '种子已删除')}
+            className="shrink-0 text-ink-muted hover:text-red-500 transition-all duration-150 cursor-pointer disabled:opacity-40"
+            aria-label="删除种子"
+          >
+            <Trash2 size={14} />
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }
